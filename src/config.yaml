@@ -1,0 +1,83 @@
+ClinVar:
+  # 09_20: /gstock/biolo_datasets/variation/variation_sets/clinvar/vcf_GRCh37/v2/clinvar_20201010.vcf.gz
+  Jan_21: /gstock/biolo_datasets/variation/variation_sets/clinvar/vcf_GRCh37/v2/clinvar_20210123.vcf.gz
+CCRS_analysis:
+  RefSeq_CCRS: data/2_processed/RefSeq_CCRS.csv.gz
+  RefSeq_transformed: /home/weber/PycharmProjects/ExoCarto/data/2_processed/DF_transformed.csv.gz
+DiseaseHealthyComparison:
+  COUNT_mRNA_CDS_RATIO: data/2_processed/Count_mRNA_CDS_Ratio_disease_healty.csv.gz
+  KS_results: statistics/KS_results_CDS_mRNA.xlsx
+EXOTIC:
+  refseq_path: /gstock/EXOTIC/data/GENOMICS/RefSeq_processed.csv.gz
+  pext_refseq_path: /gstock/EXOTIC/data/EXPRESSION/RefSeq_PEXT_2021.parquet
+  # intermediate_file_lite_path: /home/weber/PycharmProjects/ExoCarto/data/clean/2_expression/RefSeq_PEXT_pct_lite.parquet
+  exotic_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_2021.parquet
+  exotic_ok_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_tissues_ok.parquet
+  exotic_gtex_comparison_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_tissues_gtex_comparison.parquet
+
+  # gtex_pext_exon_file_path: /home/weber/PycharmProjects/ExoCarto/data/clean/2_expression/RefSeq_PEXT_GTEx.parquet
+  # omim_global: /home/weber/PycharmProjects/ExoCarto/data/clean/3_phenotypes/omim_genes_bodyparts.csv.gz
+  omim_detailed:  /gstock/EXOTIC/data/PHENOTYPES/omim_genes_bodyparts_detailed.csv.gz
+  clinvar_file_path: /gstock/EXOTIC/data/VARIATIONS/clinvar_20210123_lite_table.parquet
+  refseq_gene_level_path: /gstock/EXOTIC/data/GENOMICS/GRCh37_RefSeq_lite_hgnc.csv.gz
+  clinvar_pmid_mapping_path: /gstock/biolo_datasets/variation/variation_sets/clinvar/tab/var_citations.txt
+  clinvar_gnomad_pathogenic: /gstock/EXOTIC/data/VARIATIONS/ClinVar_gnomAD_all_2021.parquet
+  biomart_ensembl_hgnc: /gstock/EXOTIC/data/OTHERS/biomart_hgnc_ensembl.txt.gz
+  biomart_ensembl_hgnc_refseq: /gstock/EXOTIC/data/OTHERS/biomart_refseq_ensembl_hgnc.txt.gz
+ExtractDiseaseGenes:
+  DISEASE_GENES_PATH: data/1_interim/disease_genes.pkl
+  venn_clinvar_hgmd: visualization/Venn_diagram_pathogenic_genes_ClinVar_HGMD.png
+GeneExonLevel:
+  biomart_file: /home/weber/PycharmProjects/ExoCarto/data/0_external/BIOMART_CHR.txt.gz
+  ccrs_file: data/0_external/ccrs.autosomes.v2.20180420.bed.gz
+  clinvar_file: data/0_external/clinvar_20200608_vep.vcf.gz
+  hgmd_file: data/0_external/hgmd_vep_vcfanno.vcf.gz
+  combine_path: data/0_external/combine_pathogenic_2020.vcf.gz
+  gnomad_pathogenic_genes: data/0_external/gnomad_pathogenic_review.vcf.gz
+GTEX:
+  transcript_average_file: data/0_external/GTEx.V7.tx_medians.021820.tsv.bgz
+  biomart_mapping_transcripts: /home/weber/PycharmProjects/ExoCarto/data/0_external/biomart_mapping_transcript.txt.gz
+  tmp_gtex_mapping: data/0_external/tmp_gtex_mapping.parquet
+  stats_gtex_median: data/0_external/GTEx_TPM_STMSD_stats.parquet
+  transcript_reads: /gstock/biolo_datasets/variation/benchmark/Databases/GTEX/V7/GTEx_Analysis_2016-01-15_v7_RSEMv1.2.22_transcript_expected_count.txt.gz
+  transcript_tpm: /gstock/biolo_datasets/variation/benchmark/Databases/GTEX/V7/GTEx_Analysis_2016-01-15_v7_RSEMv1.2.22_transcript_tpm.txt.gz
+  transcript_check: /gstock/biolo_datasets/variation/benchmark/Databases/GTEX/V7/GTEx_Analysis_2016-01-15_v7_RSEMv1.2.22_transcript_final_check.txt.gz
+  transcript_check_refseq: /gstock/biolo_datasets/variation/benchmark/Databases/GTEX/V7/GTEx_Analysis_2016-01-15_v7_RSEMv1.2.22_transcript_final_check_refseq.txt.gz
+QTL:
+  sqlseeker2:
+    GTEx_V8_RSEM: /gstock/biolo_datasets/QTL/sqlseeker-2/sQTLs.GTEx.V8.RSEM/
+    GTEx_V7_RSEM: /gstock/biolo_datasets/QTL/sqlseeker-2/sQTLs.GTEx.V7.RSEM/
+    GTEx_V7_leafcutter: /gstock/biolo_datasets/QTL/sqlseeker-2/sQTLs.GTEx.V7.LeafCutter/
+GWAS:
+  associations: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-catalog-associations_ontology-annotated.tsv
+  studies: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-catalog-studies_ontology-annotated.tsv
+  ancestry: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-catalog-ancestry.tsv
+  efo: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-efo-trait-mappings.tsv
+RefSeq:
+  build_file: data/1_interim/RefSeq_GRCh37_complete_new.csv.gz
+  df_transposed_gene_file: data/2_processed/GRCh37_RefSeq_lite_hgnc.csv.gz
+  raw_file: data/0_external/GRCh37_latest_genomic.gff.gz
+  refseq_corrected_by_gtex: /gstock/EXOTIC/data/GENOMICS/RefSeq_corrected_by_GTEx.csv.gz
+  refseq_mrna_cds: /gstock/EXOTIC/data/GENOMICS/RefSeq_mRNA_CDS.parquet
+  refseq_old_new_comparison: /gstock/EXOTIC/data/GENOMICS/refseq_old_new.parquet
+RefSeqStats:
+  CORRECTED_DF_PATH: data/2_processed/GRCh37_corrected_refseq.csv.gz
+  CORRECTED_DISEASE_PATH: data/2_processed/GRCh37_corrected_refseq_disease.csv.gz
+  CORRECTED_HEALTHY_PATH: data/2_processed/GRCh37_corrected_refseq_healthy.csv.gz
+  CORRECTED_MULTI_ISO_PATH: data/2_processed/GRCh37_corrected_refseq_multi_iso.csv.gz
+  STATS_DISEASE_PATH: statistics/GRCh37_stats_multi_iso_disease.xlsx
+  STATS_HEALTHY_PATH: statistics/GRCh37_stats_multi_iso_healthy.xlsx
+  STATS_MULTI_ISO_PATH: statistics/GRCh37_stats_multi_iso.xlsx
+  STATS_PATH: statistics/GRCh37_stats_total.xlsx
+  mRNA_nb_counter: statistics/mRNA_stats_counter.xlsx
+  mRNA_nb_metrics: statistics/mRNA_stats_metrics.xlsx
+TEST:
+  CCRS: data/2_processed/CCRS_RefSeq_TP53_BRCA1_core.csv.gz
+  RefSeq_transformed: /home/weber/Téléchargements/ExoCarto-Augusta-master/GRCh37_RefSeq_TP53_BRCA1.csv.gz
+  combine_path: /home/weber/Téléchargements/ExoCarto-Augusta-master/TP53_BRCA1_CLINVAR_HGMD.vcf.gz
+  gnomad_pathogenic_genes: /home/weber/Téléchargements/ExoCarto-Augusta-master/TP53_BRCA1.vcf.gz
+  Output: data/2_processed/RefSeq_X_VCF_TP53-BRCA1.csv.gz
+  Output_visu: statistics/RefSeq_X_VCF_data_visualization_TP53-BRCA1.xlsx
+VCF_analysis:
+  Output: data/2_processed/RefSeq_X_VCF_NO_CCRS_pathogenic_only.parquet
+  Output_visu: statistics/RefSeq_X_VCF_data_NO_CCRS_visualization_test.xlsx

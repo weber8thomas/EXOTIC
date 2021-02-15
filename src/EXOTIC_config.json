@@ -1,0 +1,555 @@
+{
+    "convert_tissue_dict": {
+        "Adipose_Subcutaneous": "Adipose - Subcutaneous",
+        "Adipose_Visceral_Omentum_": "Adipose - Visceral (Omentum)",
+        "AdrenalGland": "Adrenal Gland",
+        "Artery_Aorta": "Artery - Aorta",
+        "Artery_Coronary": "Artery - Coronary",
+        "Artery_Tibial": "Artery - Tibial",
+        "Bladder": "Bladder",
+        "Brain_Amygdala": "Brain - Amygdala",
+        "Brain_Anteriorcingulatecortex_BA24_": "Brain - Anterior cingulate cortex (BA24)",
+        "Brain_Caudate_basalganglia_": "Brain - Caudate (basal ganglia)",
+        "Brain_CerebellarHemisphere": "Brain - Cerebellar Hemisphere",
+        "Brain_Cerebellum": "Brain - Cerebellum",
+        "Brain_Cortex": "Brain - Cortex",
+        "Brain_FrontalCortex_BA9_": "Brain - Frontal Cortex (BA9)",
+        "Brain_Hippocampus": "Brain - Hippocampus",
+        "Brain_Hypothalamus": "Brain - Hypothalamus",
+        "Brain_Nucleusaccumbens_basalganglia_": "Brain - Nucleus accumbens (basal ganglia)",
+        "Brain_Putamen_basalganglia_": "Brain - Putamen (basal ganglia)",
+        "Brain_Spinalcord_cervicalc_1_": "Brain - Spinal cord (cervical c-1)",
+        "Brain_Substantianigra": "Brain - Substantia nigra",
+        "Breast_MammaryTissue": "Breast - Mammary Tissue",
+        "Cells_EBV_transformedlymphocytes": "Cells - EBV-transformed lymphocytes",
+        "Cells_Transformedfibroblasts": "Cells - Cultured fibroblasts",
+        "Cervix_Ectocervix": "Cervix - Ectocervix",
+        "Cervix_Endocervix": "Cervix - Endocervix",
+        "Colon_Sigmoid": "Colon - Sigmoid",
+        "Colon_Transverse": "Colon - Transverse",
+        "Esophagus_GastroesophagealJunction": "Esophagus - Gastroesophageal Junction",
+        "Esophagus_Mucosa": "Esophagus - Mucosa",
+        "Esophagus_Muscularis": "Esophagus - Muscularis",
+        "FallopianTube": "Fallopian Tube",
+        "Heart_AtrialAppendage": "Heart - Atrial Appendage",
+        "Heart_LeftVentricle": "Heart - Left Ventricle",
+        "Kidney_Cortex": "Kidney - Cortex",
+        "Liver": "Liver",
+        "Lung": "Lung",
+        "MinorSalivaryGland": "Minor Salivary Gland",
+        "Muscle_Skeletal": "Muscle - Skeletal",
+        "Nerve_Tibial": "Nerve - Tibial",
+        "Ovary": "Ovary",
+        "Pancreas": "Pancreas",
+        "Pituitary": "Pituitary",
+        "Prostate": "Prostate",
+        "Skin_NotSunExposed_Suprapubic_": "Skin - Not Sun Exposed (Suprapubic)",
+        "Skin_SunExposed_Lowerleg_": "Skin - Sun Exposed (Lower leg)",
+        "SmallIntestine_TerminalIleum": "Small Intestine - Terminal Ileum",
+        "Spleen": "Spleen",
+        "Stomach": "Stomach",
+        "Testis": "Testis",
+        "Thyroid": "Thyroid",
+        "Uterus": "Uterus",
+        "Vagina": "Vagina",
+        "WholeBlood": "Whole Blood"
+    },
+    "mapping_omim_gtex_global": {
+        "Adipose - Subcutaneous": [
+            "growth"
+        ],
+        "Adipose - Visceral (Omentum)": [
+            "growth"
+        ],
+        "Adrenal Gland": [
+            "endocrineFeatures"
+        ],
+        "Artery - Aorta": [
+            "cardiovascular"
+        ],
+        "Artery - Coronary": [
+            "cardiovascular"
+        ],
+        "Artery - Tibial": [
+            "cardiovascular"
+        ],
+        "Bladder": [
+            "genitourinary"
+        ],
+        "Brain - Amygdala": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Anterior cingulate cortex (BA24)": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Caudate (basal ganglia)": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Cerebellar Hemisphere": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Cerebellum": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Cortex": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Frontal Cortex (BA9)": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Hippocampus": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Hypothalamus": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Nucleus accumbens (basal ganglia)": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Putamen (basal ganglia)": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Spinal cord (cervical c-1)": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Brain - Substantia nigra": [
+            "headAndNeck",
+            "neurologic",
+            "voice"
+        ],
+        "Breast - Mammary Tissue": [
+            "chest"
+        ],
+        "Cells - Cultured fibroblasts": [
+            ""
+        ],
+        "Cells - EBV-transformed lymphocytes": [
+            "immunology"
+        ],
+        "Cervix - Ectocervix": [
+            "genitourinary"
+        ],
+        "Cervix - Endocervix": [
+            "genitourinary"
+        ],
+        "Colon - Sigmoid": [
+            "abdomen"
+        ],
+        "Colon - Transverse": [
+            "abdomen"
+        ],
+        "Esophagus - Gastroesophageal Junction": [
+            "abdomen"
+        ],
+        "Esophagus - Mucosa": [
+            "abdomen"
+        ],
+        "Esophagus - Muscularis": [
+            "abdomen"
+        ],
+        "Fallopian Tube": [
+            "genitourinary"
+        ],
+        "Heart - Atrial Appendage": [
+            "cardiovascular"
+        ],
+        "Heart - Left Ventricle": [
+            "cardiovascular"
+        ],
+        "Kidney - Cortex": [
+            "genitourinary"
+        ],
+        "Liver": [
+            "abdomen"
+        ],
+        "Lung": [
+            "respiratory"
+        ],
+        "Minor Salivary Gland": [
+            "headAndNeck"
+        ],
+        "Muscle - Skeletal": [
+            "muscleSoftTissue"
+        ],
+        "Nerve - Tibial": [
+            "neurologic"
+        ],
+        "Ovary": [
+            "genitourinary"
+        ],
+        "Pancreas": [
+            "abdomen"
+        ],
+        "Pituitary": [
+            "endocrineFeatures"
+        ],
+        "Prostate": [
+            "genitourinary"
+        ],
+        "Skin - Not Sun Exposed (Suprapubic)": [
+            "skinNailsHair"
+        ],
+        "Skin - Sun Exposed (Lower leg)": [
+            "skinNailsHair"
+        ],
+        "Small Intestine - Terminal Ileum": [
+            "abdomen"
+        ],
+        "Spleen": [
+            "abdomen"
+        ],
+        "Stomach": [
+            "abdomen"
+        ],
+        "Testis": [
+            "genitourinary"
+        ],
+        "Thyroid": [
+            "endocrineFeatures"
+        ],
+        "Uterus": [
+            "genitourinary"
+        ],
+        "Vagina": [
+            "genitourinary"
+        ],
+        "Whole Blood": [
+            "hematology"
+        ]
+    },
+    "mapping_omim_gtex_detailed": {
+        "Adipose - Subcutaneous": [
+            "growthWeight"
+        ],
+        "Adipose - Visceral (Omentum)": [
+            "growthWeight"
+        ],
+        "Adrenal Gland": [
+            "endocrineFeatures"
+        ],
+        "Artery - Aorta": [
+            "cardiovascularVascular"
+        ],
+        "Artery - Coronary": [
+            "cardiovascularVascular"
+        ],
+        "Bladder": [
+            "genitourinaryBladder"
+        ],
+        "Brain - Amygdala": [
+            "headAndNeckHead"
+        ],
+        "Brain - Anterior cingulate cortex (BA24)": [
+            "headAndNeckHead"
+        ],
+        "Brain - Caudate (basal ganglia)": [
+            "headAndNeckHead"
+        ],
+        "Brain - Cerebellar Hemisphere": [
+            "headAndNeckHead"
+        ],
+        "Brain - Cerebellum": [
+            "headAndNeckHead"
+        ],
+        "Brain - Cortex": [
+            "headAndNeckHead"
+        ],
+        "Brain - Frontal Cortex (BA9)": [
+            "headAndNeckHead"
+        ],
+        "Brain - Hippocampus": [
+            "headAndNeckHead"
+        ],
+        "Brain - Hypothalamus": [
+            "headAndNeckHead"
+        ],
+        "Brain - Nucleus accumbens (basal ganglia)": [
+            "headAndNeckHead"
+        ],
+        "Brain - Putamen (basal ganglia)": [
+            "headAndNeckHead"
+        ],
+        "Brain - Spinal cord (cervical c-1)": [
+            "headAndNeckHead"
+        ],
+        "Brain - Substantia nigra": [
+            "headAndNeckHead"
+        ],
+        "Breast - Mammary Tissue": [
+            "chestBreasts"
+        ],
+        "Cells - EBV-transformed lymphocytes": [
+            "immunology"
+        ],
+        "Cervix - Ectocervix": [
+            "genitourinaryExternalGenitaliaFemale"
+        ],
+        "Cervix - Endocervix": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Colon - Sigmoid": [
+            "abdomenGastrointestinal"
+        ],
+        "Esophagus - Gastroesophageal Junction": [
+            "abdomenGastrointestinal"
+        ],
+        "Fallopian Tube": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Heart - Atrial Appendage": [
+            "cardiovascularHeart"
+        ],
+        "Heart - Left Ventricle": [
+            "cardiovascularHeart"
+        ],
+        "Kidney - Cortex": [
+            "genitourinaryKidneys"
+        ],
+        "Kidney - Medulla": [
+            "genitourinaryKidneys"
+        ],
+        "Liver": [
+            "abdomenLiver"
+        ],
+        "Lung": [
+            "respiratoryLung"
+        ],
+        "Minor Salivary Gland": [
+            "headAndNeckMouth, headAndNeckTeeth"
+        ],
+        "Muscle - Skeletal": [
+            "muscleSoftTissue"
+        ],
+        "Nerve - Tibial": [
+            "neurologicPeripheralNervousSystem"
+        ],
+        "Ovary": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Pancreas": [
+            "abdomenPancreas"
+        ],
+        "Pituitary": [
+            "endocrineFeatures"
+        ],
+        "Prostate": [
+            "genitourinaryInternalGenitaliaMale"
+        ],
+        "Skin - Sun Exposed (Lower leg)": [
+            "skinNailsHairSkin"
+        ],
+        "Skin - Not Sun Exposed (Suprapubic)": [
+            "skinNailsHairSkin"
+        ],
+        "Small Intestine - Terminal Ileum": [
+            "abdomenGastrointestinal"
+        ],
+        "Spleen": [
+            "abdomenSpleen"
+        ],
+        "Stomach": [
+            "abdomenGastrointestinal"
+        ],
+        "Testis": [
+            "genitourinaryExternalGenitaliaMale"
+        ],
+        "Thyroid": [
+            "endocrineFeatures"
+        ],
+        "Uterus": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Vagina": [
+            "genitourinaryExternalGenitaliaFemale"
+        ],
+        "Whole Blood": [
+            "hematology"
+        ]
+    },
+    "mapping_omim_gtex_neurologic": {
+        "Adipose - Subcutaneous": [
+            "growthWeight"
+        ],
+        "Adipose - Visceral (Omentum)": [
+            "growthWeight"
+        ],
+        "Adrenal Gland": [
+            "endocrineFeatures"
+        ],
+        "Artery - Aorta": [
+            "cardiovascularVascular"
+        ],
+        "Artery - Coronary": [
+            "cardiovascularVascular"
+        ],
+        "Bladder": [
+            "genitourinaryBladder"
+        ],
+        "Brain - Amygdala": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Anterior cingulate cortex (BA24)": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Caudate (basal ganglia)": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Cerebellar Hemisphere": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Cerebellum": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Cortex": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Frontal Cortex (BA9)": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Hippocampus": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Hypothalamus": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Nucleus accumbens (basal ganglia)": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Putamen (basal ganglia)": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Spinal cord (cervical c-1)": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Brain - Substantia nigra": [
+            "headAndNeckHead",
+            "neurologicCentralNervousSystem"
+        ],
+        "Breast - Mammary Tissue": [
+            "chestBreasts"
+        ],
+        "Cells - EBV-transformed lymphocytes": [
+            "immunology"
+        ],
+        "Cervix - Ectocervix": [
+            "genitourinaryExternalGenitaliaFemale"
+        ],
+        "Cervix - Endocervix": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Colon - Sigmoid": [
+            "abdomenGastrointestinal"
+        ],
+        "Esophagus - Gastroesophageal Junction": [
+            "abdomenGastrointestinal"
+        ],
+        "Fallopian Tube": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Heart - Atrial Appendage": [
+            "cardiovascularHeart"
+        ],
+        "Heart - Left Ventricle": [
+            "cardiovascularHeart"
+        ],
+        "Kidney - Cortex": [
+            "genitourinaryKidneys"
+        ],
+        "Kidney - Medulla": [
+            "genitourinaryKidneys"
+        ],
+        "Liver": [
+            "abdomenLiver"
+        ],
+        "Lung": [
+            "respiratoryLung"
+        ],
+        "Minor Salivary Gland": [
+            "headAndNeckMouth, headAndNeckTeeth"
+        ],
+        "Muscle - Skeletal": [
+            "muscleSoftTissue"
+        ],
+        "Nerve - Tibial": [
+            "neurologicPeripheralNervousSystem"
+        ],
+        "Ovary": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Pancreas": [
+            "abdomenPancreas"
+        ],
+        "Pituitary": [
+            "endocrineFeatures"
+        ],
+        "Prostate": [
+            "genitourinaryInternalGenitaliaMale"
+        ],
+        "Skin - Sun Exposed (Lower leg)": [
+            "skinNailsHairSkin"
+        ],
+        "Skin - Not Sun Exposed (Suprapubic)": [
+            "skinNailsHairSkin"
+        ],
+        "Small Intestine - Terminal Ileum": [
+            "abdomenGastrointestinal"
+        ],
+        "Spleen": [
+            "abdomenSpleen"
+        ],
+        "Stomach": [
+            "abdomenGastrointestinal"
+        ],
+        "Testis": [
+            "genitourinaryExternalGenitaliaMale"
+        ],
+        "Thyroid": [
+            "endocrineFeatures"
+        ],
+        "Uterus": [
+            "genitourinaryInternalGenitaliaFemale"
+        ],
+        "Vagina": [
+            "genitourinaryExternalGenitaliaFemale"
+        ],
+        "Whole Blood": [
+            "hematology"
+        ]
+    }
+}

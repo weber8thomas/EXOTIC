@@ -1,0 +1,13 @@
+parmap
+pandas
+snakemake
+matplotlib
+seaborn
+parmap
+pandarallel
+pyaml
+openpyxl
+ptitprince
+plotnine
+jupyter
+plotly
