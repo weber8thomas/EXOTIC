@@ -299,6 +299,8 @@ class EXOTIC:
 
         return omim, disease_genes_multi_iso, pathogenic_clinvar, clinvar_pmid_mapping
 
+    ## TEST
+
     def build_file_exotic_score(self):
         if os.path.isfile(self.exotic_files["exotic_path"]) is False:
             # READ FILES
