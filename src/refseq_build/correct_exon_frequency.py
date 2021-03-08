@@ -30,20 +30,18 @@ pandarallel.initialize(nb_workers=20, progress_bar=True)
 yaml = load_config_file()
 exotic_files = yaml
 
-transcript_correction_file = pd.read_csv(
-    exotic_files["GTEX"]["transcript_check_refseq"], compression="gzip", sep="\t"
-)
+transcript_correction_file = pd.read_csv(exotic_files["GTEX"]["transcript_check_refseq"], compression="gzip", sep="\t")
 
 transcripts_checked = set(transcript_correction_file.RefSeq_mRNAID.values.tolist())
 
-refseq_precomputed = pd.read_csv(
-    exotic_files["EXOTIC"]["refseq_path"], compression="gzip", sep="\t"
-).drop_duplicates(subset=["Gene", "ranges", "HGNC"])
+refseq_precomputed = pd.read_csv(exotic_files["EXOTIC"]["refseq_path"], compression="gzip", sep="\t").drop_duplicates(
+    subset=["Gene", "ranges", "HGNC"]
+)
 
 
 def compute_mrna_refseq():
     o_file = exotic_files["RefSeq"]["refseq_mrna_cds"]
-    if os.path.isfile(o_file) is True:
+    if os.path.isfile(o_file) is False:
         mrna_df = pd.read_csv(
             "/home/weber/PycharmProjects/ExoCarto/data/1_interim/RefSeq_GRCh37_complete_new.csv.gz",
             compression="gzip",
@@ -54,6 +52,8 @@ def compute_mrna_refseq():
         current_elem = str()
 
         l_mrna_cds = list()
+
+        # FIRST PASS / RAW
 
         for j, row in tqdm(mrna_df.iterrows()):
             if row["Element"] == "gene":
@@ -81,11 +81,6 @@ def compute_mrna_refseq():
         df_mrna_gene["mRNA_nb_total"] = df_mrna_gene["mRNA_gene"].apply(len)
 
         merge_df_mrna_cds = pd.merge(df_mrna_cds, df_mrna_gene, on="Gene")
-        merge_df_mrna_cds["Ratio"] = (
-            merge_df_mrna_cds["mRNA_nb"].astype(str)
-            + "/"
-            + merge_df_mrna_cds["mRNA_nb_total"].astype(str)
-        )
 
         merge_df_mrna_cds["mRNA_gene"] = merge_df_mrna_cds["mRNA_gene"].apply(list)
 
@@ -95,101 +90,109 @@ def compute_mrna_refseq():
     return merge_df_mrna_cds
 
 
+# GTEx correction
+def gtex_correction():
+    if os.path.isfile(exotic_files["RefSeq"]["refseq_corrected_by_gtex"]) is False:
+
+        refseq_corrected_transcripts = merge_df_mrna_cds[["Gene", "ranges", "mRNA_exons"]]
+        print(refseq_corrected_transcripts.Gene.nunique())
+
+        # EXPLODE FROM LISTS TO ROWS
+        refseq_corrected_transcripts = refseq_corrected_transcripts.explode("mRNA_exons")
+        refseq_corrected_transcripts["mRNA_exons"] = refseq_corrected_transcripts["mRNA_exons"].apply(lambda r: r.split(".")[0])
+
+        # FILTERING mRNAs which respect GTEx expression cutoffs (reads & TPM)
+        refseq_corrected_transcripts = refseq_corrected_transcripts.loc[refseq_corrected_transcripts["mRNA_exons"].isin(transcripts_checked)]
+
+        # GROUPBY
+        refseq_corrected_transcripts = refseq_corrected_transcripts.groupby(["Gene", "ranges"])["mRNA_exons"].apply(list)
+
+        refseq_corrected_transcripts = refseq_corrected_transcripts.reset_index()
+        refseq_corrected_transcripts = refseq_corrected_transcripts.rename({"mRNA_exons": "new_mRNA_exons"}, axis=1)
+        refseq_corrected_transcripts["new_mRNA_nb"] = refseq_corrected_transcripts["new_mRNA_exons"].apply(len)
+
+        # TMP FILE
+        refseq_corrected_transcripts.to_csv(
+            exotic_files["RefSeq"]["refseq_corrected_by_gtex"],
+            compression="gzip",
+            sep="\t",
+            index=False,
+        )
+
+    else:
+        refseq_corrected_transcripts = pd.read_csv(exotic_files["RefSeq"]["refseq_corrected_by_gtex"], compression="gzip", sep="\t")
+    return refseq_corrected_transcripts
+
+
+def process_new_file(refseq_corrected_transcripts):
+    # COMPUTE mRNAs LIST AT GENE LEVEL BASED ON GROUPBY
+    refseq_corrected_transcripts["new_mRNA_exons"] = refseq_corrected_transcripts["new_mRNA_exons"].apply(eval)
+    refseq_corrected_transcripts_gene_level = refseq_corrected_transcripts.groupby("Gene")["new_mRNA_exons"].apply(list).reset_index()
+
+    # EXTEND LIST OF LIST INTO ONE LIST TRANSFORMED TO A SET
+    refseq_corrected_transcripts_gene_level["new_mRNA_gene"] = refseq_corrected_transcripts_gene_level["new_mRNA_exons"].apply(
+        lambda r: list(set([sub_e for e in r for sub_e in e]))
+    )
+
+    # MERGE EXON & GENE LEVELS
+    refseq_corrected_transcripts = pd.merge(
+        refseq_corrected_transcripts, refseq_corrected_transcripts_gene_level[["Gene", "new_mRNA_gene"]], on="Gene"
+    )
+
+    # COMPUTE
+    refseq_corrected_transcripts["new_mRNA_nb_total"] = refseq_corrected_transcripts["new_mRNA_gene"].apply(len)
+    refseq_corrected_transcripts["new_Ratio"] = (
+        refseq_corrected_transcripts["new_mRNA_nb"].astype(str) + "/" + refseq_corrected_transcripts["new_mRNA_nb_total"].astype(str)
+    )
+    refseq_corrected_transcripts["new_Ratio_num"] = refseq_corrected_transcripts["new_Ratio"].apply(eval)
+    refseq_corrected_transcripts["new_Ratio_num"] = refseq_corrected_transcripts["new_Ratio_num"].astype(float)
+
+    # CONST & ALT
+    refseq_corrected_transcripts.loc[refseq_corrected_transcripts["new_Ratio_num"] < 1, "Const_Alt"] = "Alt"
+    refseq_corrected_transcripts.loc[refseq_corrected_transcripts["new_Ratio_num"] == 1, "Const_Alt"] = "Const"
+
+    # ALT BINS
+    bins = [0, 0.2, 0.4, 0.6, 0.8, 1]
+    labels = bins.copy()
+    labels_ratio = [str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1)) for j in range(len(labels) - 1)]
+    refseq_corrected_transcripts["new_Ratio_num_bins"] = pd.cut(
+        refseq_corrected_transcripts["new_Ratio_num"], bins=bins, labels=labels_ratio, include_lowest=True
+    )
+
+    # DUPLICATES
+    refseq_corrected_transcripts = refseq_corrected_transcripts.drop_duplicates(subset=["Gene", "ranges"])
+
+    # START, STOP, LENGTH
+    refseq_corrected_transcripts["Start"] = refseq_corrected_transcripts["ranges"].apply(lambda r: r.split("-")[0])
+    refseq_corrected_transcripts["Start"] = refseq_corrected_transcripts["Start"].astype(int)
+    refseq_corrected_transcripts["End"] = refseq_corrected_transcripts["ranges"].apply(lambda r: r.split("-")[1])
+    refseq_corrected_transcripts["End"] = refseq_corrected_transcripts["End"].astype(int)
+    refseq_corrected_transcripts["Length"] = refseq_corrected_transcripts["End"] - refseq_corrected_transcripts["Start"]
+
+    # CDS count
+    t = refseq_corrected_transcripts.groupby(["Gene", "new_mRNA_nb_total"])["ranges"].agg("nunique").reset_index()
+
+    # MERGE WITH PREVIOUS
+    refseq_corrected_transcripts = pd.merge(
+        refseq_corrected_transcripts, t.rename({"ranges": "new_CDS_count"}, axis=1), on=["Gene", "new_mRNA_nb_total"]
+    )
+
+    # OUPUTS
+    refseq_corrected_transcripts.to_parquet(exotic_files["RefSeq"]["refseq_corrected_lite"], index=False)
+    refseq_corrected_transcripts.to_csv(
+        exotic_files["RefSeq"]["refseq_corrected_lite"].replace(".parquet", ".csv.gz"),
+        compression="gzip",
+        sep="\t",
+        index=False,
+    )
+
+
+# FIRST PASS
 merge_df_mrna_cds = compute_mrna_refseq()
 merge_df_mrna_cds = merge_df_mrna_cds.rename({"CDS": "ranges"}, axis=1)
 
+# CORRECT WITH GTEX
+refseq_corrected_transcripts = gtex_correction()
 
-if os.path.isfile(exotic_files["RefSeq"]["refseq_corrected_by_gtex"]) is False:
-
-    refseq_corrected_transcripts = merge_df_mrna_cds[["Gene", "ranges", "mRNA_exons"]]
-    print(refseq_corrected_transcripts.Gene.nunique())
-
-    # refseq_corrected_transcripts["mRNA_exons"] = refseq_corrected_transcripts[
-    # "mRNA_exons"
-    # ].apply(eval)
-    refseq_corrected_transcripts = refseq_corrected_transcripts.explode("mRNA_exons")
-    refseq_corrected_transcripts["mRNA_exons"] = refseq_corrected_transcripts[
-        "mRNA_exons"
-    ].apply(lambda r: r.split(".")[0])
-
-    refseq_corrected_transcripts = refseq_corrected_transcripts.loc[
-        refseq_corrected_transcripts["mRNA_exons"].isin(transcripts_checked)
-    ]
-
-    refseq_corrected_transcripts = refseq_corrected_transcripts.groupby(
-        ["Gene", "ranges"]
-    )["mRNA_exons"].apply(list)
-
-    refseq_corrected_transcripts = refseq_corrected_transcripts.reset_index()
-    refseq_corrected_transcripts = refseq_corrected_transcripts.rename(
-        {"mRNA_exons": "new_mRNA_exons"}, axis=1
-    )
-    refseq_corrected_transcripts["new_mRNA_nb"] = refseq_corrected_transcripts[
-        "new_mRNA_exons"
-    ].apply(len)
-
-    # refseq_corrected_transcripts.to_csv(
-    # exotic_files["RefSeq"]["refseq_corrected_by_gtex"],
-    # compression="gzip",
-    # sep="\t",
-    # index=False,
-    # )
-
-else:
-    refseq_corrected_transcripts = pd.read_csv(
-        exotic_files["RefSeq"]["refseq_corrected_by_gtex"], compression="gzip", sep="\t"
-    )
-
-refseq_corrected_transcripts_gene_level = (
-    refseq_corrected_transcripts.groupby("Gene")["new_mRNA_exons"]
-    .apply(list)
-    .reset_index()
-)
-
-refseq_corrected_transcripts["new_mRNA_exons"] = refseq_corrected_transcripts[
-    "new_mRNA_exons"
-].apply(eval)
-
-refseq_corrected_transcripts_gene_level[
-    "new_mRNA_exons"
-] = refseq_corrected_transcripts["new_mRNA_exons"].apply(
-    lambda r: list(set([sub_e for e in r for sub_e in e.split(",")]))
-)
-
-refseq_corrected_transcripts_gene_level = (
-    refseq_corrected_transcripts_gene_level.rename(
-        {"new_mRNA_exons": "new_mRNA_gene"}, axis=1
-    )
-)
-refseq_corrected_transcripts = pd.merge(
-    refseq_corrected_transcripts, refseq_corrected_transcripts_gene_level, on="Gene"
-)
-
-merge_old_new_refseq = pd.merge(
-    merge_df_mrna_cds, refseq_corrected_transcripts, on=["Gene", "ranges"]
-)
-
-
-merge_old_new_refseq["Same_nb_mRNA_exons"] = merge_old_new_refseq.parallel_apply(
-    lambda r: True if r["mRNA_nb"] == r["new_mRNA_nb"] else False, axis=1
-)
-
-merge_old_new_refseq["new_mRNA_nb_total"] = merge_old_new_refseq["new_mRNA_gene"].apply(
-    len
-)
-
-
-merge_old_new_refseq["Same_nb_mRNA_gene"] = merge_old_new_refseq.parallel_apply(
-    lambda r: True if r["mRNA_nb_total"] == r["new_mRNA_nb_total"] else False, axis=1
-)
-
-merge_old_new_refseq["Unchanged"] = merge_old_new_refseq.parallel_apply(
-    lambda r: True
-    if r["Same_nb_mRNA_exons"] == True and r["Same_nb_mRNA_gene"] == True
-    else False,
-    axis=1,
-)
-
-print(merge_old_new_refseq)
-
-merge_old_new_refseq.to_parquet(exotic_files["RefSeq"]["refseq_old_new_comparison"])
+#  MODIF & OUTPUT
+process_new_file(refseq_corrected_transcripts)

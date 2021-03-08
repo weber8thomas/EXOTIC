@@ -2,6 +2,7 @@ import math
 import os
 import sys
 import pandas as pd
+
 import gzip
 
 pd.options.mode.chained_assignment = None  # default='warn'
@@ -10,6 +11,7 @@ import parmap
 import numpy as np
 import collections
 from tqdm import tqdm
+
 from pandarallel import pandarallel
 
 pandarallel.initialize(nb_workers=20, progress_bar=True)
@@ -23,7 +25,11 @@ import matplotlib.pyplot as plt
 import matplotlib
 import matplotlib.colors as mc
 from matplotlib.colors import LogNorm
+
+# sys.path.append("/home/weber/PycharmProjects/EXOTIC/src")
+
 from src.utils.utils import load_config_file
+
 import json
 import subprocess
 
@@ -38,10 +44,7 @@ class Compute_GTEx_profile:
         refseq_x_vcf = pd.read_parquet(refseq_x_vcf_path)
         disease_genes = refseq_x_vcf["CCRS_Gene"].unique()
 
-        if (
-            os.path.isfile(v_profile_path) is False
-            and os.path.isfile(h_profile_path) is False
-        ):
+        if os.path.isfile(v_profile_path) is False and os.path.isfile(h_profile_path) is False:
 
             gtex_tpm_stats = self.load_gtex_tpm_stats(gtex_tpm_stats_path)
 
@@ -143,14 +146,13 @@ class EXOTIC:
         ## INIT SETTINGS
         self.cpus = cpus
         self.GTEx_v_profile = gtex_profile
-        self.GTEx_v_profile = self.GTEx_v_profile.rename(
-            {"Cells - Transformed fibroblasts": "Cells - Cultured fibroblasts"}, axis=1
-        )
+        self.GTEx_v_profile = self.GTEx_v_profile.rename({"Cells - Transformed fibroblasts": "Cells - Cultured fibroblasts"}, axis=1)
         self.omim_detailed = omim_detailed
 
         ## YAML FILES CONFIG
         yaml = load_config_file()
         self.exotic_files = yaml["EXOTIC"]
+        self.files = yaml
         self.output_dir = "/gstock/EXOTIC/data/"
         # pprint(exotic_files)
 
@@ -159,7 +161,7 @@ class EXOTIC:
 
         # pprint(file_dict)
 
-        omim, disease_genes_multi_iso, clinvar, pubmed = self.load_clinvar_omim()
+        # omim, disease_genes_multi_iso, clinvar, pubmed = self.load_clinvar_omim()
 
         ## GTEx - OMIM correlation gene level
         # TODO: REDO OMIM GENE LEVEL
@@ -168,28 +170,25 @@ class EXOTIC:
         # )
         # exit()
 
-        if os.path.isfile(self.exotic_files["exotic_gtex_comparison_path"]) is True:
+        if os.path.isfile(self.exotic_files["exotic_gtex_comparison_path"]) is False:
             intermediate_file = self.build_file_exotic_score()
-            print(intermediate_file)
 
             exotic_ok = self.extract_tissues_ok(intermediate_file)
-            print(exotic_ok)
 
             exotic_gtex = self.compare_exons_gtex_profile(exotic_ok)
             print(exotic_gtex)
             exit()
 
         else:
-            exotic_gtex = pd.read_parquet(
-                self.exotic_files["exotic_gtex_comparison_path"]
-            )
+            exotic_gtex = pd.read_parquet(self.exotic_files["exotic_gtex_comparison_path"])
 
-        exotic_gtex = exotic_gtex.loc[
-            exotic_gtex["symbol"].isin(disease_genes_multi_iso.Name.values)
-        ]
-        gene_exon_df = self.compare_to_omim_basic_exon_level(
-            exotic_gtex, omim, disease_genes_multi_iso
-        )
+        tmp = pd.read_parquet("/gstock/EXOTIC/data/EXOTIC/EXOTIC_tissues_ok_corrected.parquet")
+        tmp = tmp.loc[tmp["OK_gold"].str.len() > 0]
+        print(tmp)
+        exit()
+
+        exotic_gtex = exotic_gtex.loc[exotic_gtex["symbol"].isin(disease_genes_multi_iso.Name.values)]
+        gene_exon_df = self.compare_to_omim_basic_exon_level(exotic_gtex, omim, disease_genes_multi_iso)
         # exit()
         # gene_exon_df = self.compare_to_omim_basic_gene_exon_level(
         #     exotic_gtex, omim, disease_genes_multi_iso,
@@ -215,23 +214,28 @@ class EXOTIC:
         ]
         variable_names = [k for k, v in locals().items() if v in l_to_return]
 
-        ## REFSEQ GENE LEVEL
-        full_human_genes = pd.read_csv(
-            self.exotic_files["refseq_gene_level_path"],
-            compression="gzip",
-            sep="\t",
-            low_memory=False,
-        ).rename({"MIM": "OMIM"}, axis=1)
-        full_human_genes = full_human_genes.loc[full_human_genes["mRNA_nb"] > 1]
+        # ## REFSEQ GENE LEVEL
+        # full_human_genes = pd.read_csv(
+        #     self.exotic_files["refseq_gene_level_path"],
+        #     compression="gzip",
+        #     sep="\t",
+        #     low_memory=False,
+        # ).rename({"MIM": "OMIM"}, axis=1)
+        # full_human_genes = full_human_genes.loc[full_human_genes["mRNA_nb"] > 1]
 
         ## REFSEQ DETAILED
         refseq = pd.read_csv(
             self.exotic_files["refseq_path"],
+            self.files["refseq_old_new_comparison"],
             compression="gzip",
             sep="\t",
             low_memory=False,
         )
-        refseq = refseq.loc[refseq["Gene"].isin(full_human_genes.Name.values)]
+
+        t = refseq.groupby(["Gene", "new_mRNA_nb_total"])["ranges"].agg("nunique").reset_index()
+
+        # refseq = refseq.loc[refseq["Gene"].isin(full_human_genes.Name.values)]
+        refseq = refseq.loc[(refseq["new_mRNA_nb"] > 1) & refseq["new_mRNA_nb"] > 1]
         refseq = refseq.dropna(subset=["HGNC"])
         refseq["HGNC"] = refseq["HGNC"].astype(int)
         refseq["Ratio_num"] = refseq["Ratio"].apply(eval)
@@ -252,13 +256,9 @@ class EXOTIC:
         clinvar["POS"] = clinvar["POS"].astype(int)
         clinvar["MC"] = clinvar["MC"].apply(lambda r: r.split(",")[0])
         pathogenic_clinvar = clinvar.loc[
-            (clinvar["Status"] == "Pathogenic")
-            & (~clinvar["Real_Status"].str.contains("onflicting") == True)
-            & (clinvar["RS_STARS"] >= 0)
+            (clinvar["Status"] == "Pathogenic") & (~clinvar["Real_Status"].str.contains("onflicting") == True) & (clinvar["RS_STARS"] >= 0)
         ]
-        disease_genes = pathogenic_clinvar.loc[
-            pathogenic_clinvar["RS_STARS"] > 0, "GENE"
-        ].unique()
+        disease_genes = pathogenic_clinvar.loc[pathogenic_clinvar["RS_STARS"] > 0, "GENE"].unique()
         # disease_genes = pathogenic_clinvar.loc[pathogenic_clinvar['RS_STARS'] > 0, "GENE"].unique()
 
         ## REFSEQ GENE LEVEL
@@ -293,37 +293,58 @@ class EXOTIC:
 
         omim = omim.loc[omim["Name"].isin(disease_genes_multi_iso.Name.unique())]
 
-        clinvar_pmid_mapping = pd.read_csv(
-            self.exotic_files["clinvar_pmid_mapping_path"], sep="\t"
-        )
+        clinvar_pmid_mapping = pd.read_csv(self.exotic_files["clinvar_pmid_mapping_path"], sep="\t")
 
         return omim, disease_genes_multi_iso, pathogenic_clinvar, clinvar_pmid_mapping
 
-    ## TEST
-
     def build_file_exotic_score(self):
         if os.path.isfile(self.exotic_files["exotic_path"]) is False:
-            # READ FILES
-            ## REFSEQ GENE LEVEL
-            full_human_genes = pd.read_csv(
-                self.exotic_files["refseq_gene_level_path"],
-                compression="gzip",
-                sep="\t",
-                low_memory=False,
-            ).rename({"MIM": "OMIM"}, axis=1)
-            full_human_genes = full_human_genes.loc[full_human_genes["mRNA_nb"] > 1]
 
-            ## REFSEQ DETAILED
-            refseq = pd.read_csv(
-                self.exotic_files["refseq_path"],
+            # READ FILES
+            # BIOMART
+            biomart = pd.read_csv(
+                # self.exotic_files["refseq_path"],
+                self.files["EXOTIC"]["biomart_ensembl_hgnc_refseq"],
                 compression="gzip",
                 sep="\t",
                 low_memory=False,
             )
-            refseq = refseq.loc[refseq["Gene"].isin(full_human_genes.Name.values)]
+
+            ## REFSEQ
+            # refseq = pd.read_csv(
+            ## self.exotic_files["refseq_path"],
+            # self.files["RefSeq"]["refseq_corrected_lite"],
+            # compression="gzip",
+            # sep="\t",
+            # low_memory=False,
+            # )
+
+            refseq = pd.read_parquet(
+                # self.exotic_files["refseq_path"],
+                self.files["RefSeq"]["refseq_corrected_lite"],
+            )
+            refseq.columns = [c.replace("new_", "") for c in refseq.columns]
+
+            # FILTER REFSEQ => MI & Multi CDS
+            refseq = refseq.loc[(refseq["mRNA_nb_total"] > 1) & (refseq["CDS_count"] > 1)]
+
+            biomart = (
+                biomart[["Gene stable ID", "HGNC ID", "Gene name"]]
+                .rename(
+                    {"Gene stable ID": "ENSG", "HGNC ID": "HGNC", "Gene name": "Gene"},
+                    axis=1,
+                )
+                .drop_duplicates()
+            )
+            biomart["HGNC"] = biomart["HGNC"].str.replace("HGNC:", "")
+
+            # MERGE IDS
+            refseq = pd.merge(refseq, biomart, on="Gene")
+
             refseq = refseq.dropna(subset=["HGNC"])
+
+            # CONVERT DTYPE
             refseq["HGNC"] = refseq["HGNC"].astype(int)
-            refseq["Ratio_num"] = refseq["Ratio"].apply(eval)
 
             ## pext
             pext_refseq = pd.read_parquet(self.exotic_files["pext_refseq_path"])
@@ -331,31 +352,26 @@ class EXOTIC:
             # print(pext_refseq.loc[pext_refseq["symbol"] == "A1CF"])
 
             # SELECT MULTI-ISOFORM GENES
-            # TODO : get from refseq
-            multi_mrna_genes = refseq.loc[refseq["mRNA_nb"] > 1, "HGNC"].unique()
+            multi_mrna_genes = refseq.loc[refseq["mRNA_nb_total"] > 1, "HGNC"].unique()
 
             # FILTER PEXT TO GET ONLY MULTI-ISO GENES
             pext_refseq["HGNC ID"] = pext_refseq["HGNC ID"].astype(int)
             pext_refseq = pext_refseq.loc[pext_refseq["HGNC ID"].isin(multi_mrna_genes)]
             # pext_refseq = pext_refseq.head(1000)
 
-            # print(pext_refseq)
-
             # ADD COLUMSN TO PEXT
             pext_refseq = pd.merge(
                 pext_refseq,
-                refseq[["HGNC", "ranges", "Ratio_num", "mRNA_nb"]],
+                refseq[["HGNC", "ranges", "Ratio_num", "mRNA_nb", "mRNA_nb_total"]],
                 left_on=["HGNC ID", "Exon"],
                 right_on=["HGNC", "ranges"],
             )
             pext_refseq["MAP"] = pext_refseq["symbol"] + "_" + pext_refseq["Exon"]
 
+            key_number = 9
+
             # DROP DUPLICATES
-            pext_refseq = (
-                pext_refseq.drop_duplicates()
-                .sort_values(by="MAP")
-                .reset_index(drop=True)
-            )
+            pext_refseq = pext_refseq.drop_duplicates().sort_values(by="MAP").reset_index(drop=True)
 
             # RENAME COLUMNS & REORDER
             pext_refseq = pext_refseq.rename(self.dicts["convert_tissue_dict"], axis=1)
@@ -368,6 +384,7 @@ class EXOTIC:
                     "Exon",
                     "Ratio_num",
                     "mRNA_nb",
+                    "mRNA_nb_total",
                     "MAP",
                     "mean_proportion",
                     "Adipose - Subcutaneous",
@@ -427,36 +444,20 @@ class EXOTIC:
             ]
 
             # ALTERNATIVE EXONS
-            pext_refseq = pext_refseq.loc[pext_refseq["Ratio_num"] < 1].reset_index(
-                drop=True
-            )
+            pext_refseq = pext_refseq.loc[pext_refseq["Ratio_num"] < 1].reset_index(drop=True)
 
             # TODO : CHECK HOW TO HANDLE UNEXPRESSED AND FULLY EXPRESSED (0 & 1 MEAN PROP)
             ### WARNING FLAG
             # UNEXPRESSED AND FULLY EXPRESSED EXONS
-            pext_refseq = pext_refseq.loc[
-                (pext_refseq["mean_proportion"] > 0)
-                & (pext_refseq["mean_proportion"] < 1)
-            ].reset_index(drop=True)
+            pext_refseq = pext_refseq.loc[(pext_refseq["mean_proportion"] > 0) & (pext_refseq["mean_proportion"] < 1)].reset_index(drop=True)
 
             # HANDLE NAN VALUES
             # pext_refseq[pext_refseq.columns[8:]] = pext_refseq[pext_refseq.columns[8:]].replace(0, np.nan)
-            # print(pext_refseq)
-            # print(pext_refseq.shape)
+
+            pext_refseq = pext_refseq.dropna(subset=list(pext_refseq.columns[key_number:]), how="all")
 
             # print(np.count_nonzero(pext_refseq.values == 0))
-            # print(pext_refseq[pext_refseq == 0])
-
             # print(pext_refseq[pext_refseq.columns[8:]].isna().sum().sum())
-            pext_refseq = pext_refseq.dropna(
-                subset=list(pext_refseq.columns[8:]), how="all"
-            )
-            # print(pext_refseq.shape)
-            # print(np.count_nonzero(pext_refseq.values == 0))
-            # print(pext_refseq[pext_refseq.columns[8:]].isna().sum().sum())
-
-            # exit()
-
             # pext_refseq[pext_refseq.columns[7:]] = pext_refseq[pext_refseq.columns[7:]].fillna(0)
 
             # EXOTIC SIGMOID FUNCTION APPLIED TO ZSCORE
@@ -484,13 +485,12 @@ class EXOTIC:
             # BUILD MATRIX WITH Z-SCORE + SIGMOID
             # test = z_df = pext_refseq[pext_refseq.columns[8:]].apply(lambda r: zscore(r), axis=1)
             # print(test)
-            z_df = pext_refseq[pext_refseq.columns[8:]].apply(
-                lambda r: transform(r), axis=1
-            )
+            # pext_refseq = pext_refseq.head(1000)
+            z_df = pext_refseq[pext_refseq.columns[key_number:]].progress_apply(lambda r: transform(r), axis=1)
             # print(z_df)
             # exit()
             z_df = pd.DataFrame.from_dict(dict(zip(z_df.index, z_df.values))).T
-            z_df.columns = list(pext_refseq.columns[8:])
+            z_df.columns = list(pext_refseq.columns[key_number:])
 
             # print(pext_refseq)
             # print(z_df)
@@ -501,25 +501,19 @@ class EXOTIC:
             # TODO : modify to delete pext part after defining thresholds
             concat_df = pd.concat(
                 [
-                    pext_refseq[pext_refseq.columns[:8]].reset_index(drop=True),
+                    pext_refseq[pext_refseq.columns[:key_number]].reset_index(drop=True),
                     z_df.add_suffix("_exotic").reset_index(drop=True),
-                    pext_refseq[pext_refseq.columns[8:]]
-                    .add_suffix("_pextvalue")
-                    .reset_index(drop=True),
+                    pext_refseq[pext_refseq.columns[key_number:]].add_suffix("_pextvalue").reset_index(drop=True),
                 ],
                 axis=1,
             )
 
             # REMOVE DUPLICATES
-            concat_df = (
-                concat_df.drop_duplicates().sort_values(by="MAP").reset_index(drop=True)
-            )
+            concat_df = concat_df.drop_duplicates().sort_values(by="MAP").reset_index(drop=True)
 
             # OUTPUT INTERMEDIATE FILE
             concat_df.to_parquet(self.exotic_files["exotic_path"])
-            concat_df.to_excel(
-                self.exotic_files["exotic_path"].replace("parquet", "xlsx")
-            )
+            concat_df.to_excel(self.exotic_files["exotic_path"].replace("parquet", "xlsx"))
         else:
             concat_df = pd.read_parquet(self.exotic_files["exotic_path"])
 
@@ -536,15 +530,11 @@ class EXOTIC:
                     value = "{:.0f}".format(p.get_height())
                 if i == 2:
                     value = "{:.2f}".format(p.get_height())
-                ax.text(
-                    _x, _y, value, ha="center", fontsize=fontsize, rotation=rotation
-                )
+                ax.text(_x, _y, value, ha="center", fontsize=fontsize, rotation=rotation)
 
                 if i == 3:
                     value = "{:.3f}".format(p.get_height())
-                ax.text(
-                    _x, _y, value, ha="center", fontsize=fontsize, rotation=rotation
-                )
+                ax.text(_x, _y, value, ha="center", fontsize=fontsize, rotation=rotation)
 
         if isinstance(axs, np.ndarray):
             for idx, ax in np.ndenumerate(axs):
@@ -575,19 +565,13 @@ class EXOTIC:
         exotic["symbol"] = intermediate_file["symbol"]
 
         # ORDER COLUMNS
-        exotic = exotic[
-            ["symbol", "MAP", "Ratio_num", "mRNA_nb"] + list(exotic.columns[:-4])
-        ]
+        exotic = exotic[["symbol", "MAP", "Ratio_num", "mRNA_nb"] + list(exotic.columns[:-4])]
 
         exotic["tissues_bronze"] = (
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.90 and c < 0.95
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.90 and c < 0.95],
                 axis=1,
             )
         )
@@ -595,11 +579,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.95 and c < 0.99
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.95 and c < 0.99],
                 axis=1,
             )
         )
@@ -607,11 +587,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.99
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.99],
                 axis=1,
             )
         )
@@ -619,11 +595,7 @@ class EXOTIC:
             pext.filter(regex="pext")
             .fillna(0)
             .apply(
-                lambda r: [
-                    pext.columns[j].replace("_pextvalue", "")
-                    for j, c in enumerate(r)
-                    if c > 0.1
-                ],
+                lambda r: [pext.columns[j].replace("_pextvalue", "") for j, c in enumerate(r) if c > 0.1],
                 axis=1,
             )
         )
@@ -640,9 +612,7 @@ class EXOTIC:
             lambda r: list(set(r["tissues_gold"]).intersection(set(r["pext_OK"]))),
             axis=1,
         )
-        exotic["All_thresh"] = exotic.apply(
-            lambda r: r["bronze"] + r["silver"] + r["gold"], axis=1
-        )
+        exotic["All_thresh"] = exotic.apply(lambda r: r["bronze"] + r["silver"] + r["gold"], axis=1)
 
         exotic = exotic.loc[exotic["All_thresh"].str.len() > 0].reset_index(drop=True)
 
@@ -685,26 +655,16 @@ class EXOTIC:
         pext = intermediate_file.filter(regex="pext")
 
         exotic = intermediate_file.filter(regex="exotic")
-        pext["Max"] = pext.parallel_apply(
-            lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1
-        )
+        pext["Max"] = pext.parallel_apply(lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1)
         pext["MAP"] = intermediate_file["MAP"]
         pext["symbol"] = intermediate_file["symbol"]
 
-        exotic["Max"] = exotic.parallel_apply(
-            lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1
-        )
+        exotic["Max"] = exotic.parallel_apply(lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1)
         exotic["Tissues_Max"] = exotic.parallel_apply(
-            lambda r: [
-                list(exotic.columns)[j].replace("_exotic", "")
-                for j, e in enumerate(r[:-1])
-                if e == r["Max"]
-            ],
+            lambda r: [list(exotic.columns)[j].replace("_exotic", "") for j, e in enumerate(r[:-1]) if e == r["Max"]],
             axis=1,
         )
-        exotic["Tissues_Max_organs"] = exotic["Tissues_Max"].apply(
-            lambda r: list(set([e.split(" - ")[0] for e in r]))
-        )
+        exotic["Tissues_Max_organs"] = exotic["Tissues_Max"].apply(lambda r: list(set([e.split(" - ")[0] for e in r])))
         exotic["pext_max"] = pext["Max"]
 
         exotic["MAP"] = intermediate_file["MAP"]
@@ -729,11 +689,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.90 and c < 0.95
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.90 and c < 0.95],
                 axis=1,
             )
         )
@@ -741,11 +697,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.95 and c < 0.99
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.95 and c < 0.99],
                 axis=1,
             )
         )
@@ -753,11 +705,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.99
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.99],
                 axis=1,
             )
         )
@@ -765,11 +713,7 @@ class EXOTIC:
             pext.filter(regex="pext")
             .fillna(0)
             .apply(
-                lambda r: [
-                    pext.columns[j].replace("_pextvalue", "")
-                    for j, c in enumerate(r)
-                    if c > 0.1
-                ],
+                lambda r: [pext.columns[j].replace("_pextvalue", "") for j, c in enumerate(r) if c > 0.1],
                 axis=1,
             )
         )
@@ -788,9 +732,7 @@ class EXOTIC:
             lambda r: list(set(r["tissues_OK_gold"]).intersection(set(r["pext_OK"]))),
             axis=1,
         )
-        exotic["OK"] = exotic.apply(
-            lambda r: r["OK_bronze"] + r["OK_silver"] + r["OK_gold"], axis=1
-        )
+        exotic["OK"] = exotic.apply(lambda r: r["OK_bronze"] + r["OK_silver"] + r["OK_gold"], axis=1)
 
         # print(
         #     pd.concat(
@@ -924,22 +866,14 @@ class EXOTIC:
 
         def median_pext(r):
             try:
-                return np.median(
-                    [
-                        e
-                        for e in r["pext_values"]
-                        if math.isnan(e) is False and e != r["pext_max"]
-                    ]
-                )
+                return np.median([e for e in r["pext_values"] if math.isnan(e) is False and e != r["pext_max"]])
             except:
                 print(r)
                 exit()
 
         exotic["pext_max"] = pext["Max"]
         exotic["pext_values"] = pext[pext.columns[:-3]].values.tolist()
-        exotic["pext_median_except_max"] = exotic.apply(
-            lambda r: median_pext(r), axis=1
-        )
+        exotic["pext_median_except_max"] = exotic.apply(lambda r: median_pext(r), axis=1)
         exotic["pext_shift"] = exotic["pext_max"] - exotic["pext_median_except_max"]
         # print(exotic)
         # tmp_barplot = exotic[
@@ -1187,9 +1121,7 @@ class EXOTIC:
         # values = [0.999]
         for j, value in enumerate(values):
             if j < len(values) - 1:
-                tmp_exotic = exotic.loc[
-                    (exotic["value"] >= value) & (exotic["value"] < values[j + 1])
-                ]
+                tmp_exotic = exotic.loc[(exotic["value"] >= value) & (exotic["value"] < values[j + 1])]
             else:
                 tmp_exotic = exotic.loc[(exotic["value"] >= value)]
             tmp_pext = pext.loc[tmp_exotic.index]
@@ -1267,11 +1199,7 @@ class EXOTIC:
             t = "global"
         else:
             t = "detailed"
-        tmp_df_heatmap.to_excel(
-            self.output_dir
-            + self.subdirs_output_dir[1]
-            + "table_heatmap_{}.xlsx".format(t)
-        )
+        tmp_df_heatmap.to_excel(self.output_dir + self.subdirs_output_dir[1] + "table_heatmap_{}.xlsx".format(t))
         # print(tmp_df_heatmap)
         tmp_df_heatmap = tmp_df_heatmap.reset_index()
 
@@ -1488,22 +1416,16 @@ class EXOTIC:
 
         f.tight_layout()
         if glob is True:
-            f.savefig(
-                self.output_dir + self.subdirs_output_dir[1] + "heatmap_global.png"
-            )
+            f.savefig(self.output_dir + self.subdirs_output_dir[1] + "heatmap_global.png")
         else:
-            f.savefig(
-                self.output_dir + self.subdirs_output_dir[1] + "heatmap_detailed.png"
-            )
+            f.savefig(self.output_dir + self.subdirs_output_dir[1] + "heatmap_detailed.png")
 
     def barplot_gene_exon_nb(self, concat_df):
         for glob in [True, False]:
             df = concat_df[["symbol", "MAP", "Medium", "High", "Very-High", "Tissues"]]
             if glob is True:
 
-                df["Supertissues"] = df.Tissues.apply(
-                    lambda r: list([e.split(" - ")[0] for e in list(r)])
-                )
+                df["Supertissues"] = df.Tissues.apply(lambda r: list([e.split(" - ")[0] for e in list(r)]))
             else:
                 df["Supertissues"] = df["Tissues"]
 
@@ -1520,19 +1442,13 @@ class EXOTIC:
                 tmp_df = df.groupby("Supertissues").nunique()
 
             tmp_df = tmp_df.drop("Supertissues", axis=1)
-            tmp_df = tmp_df.rename(
-                {"symbol": "Genes nb", "MAP": "Exons nb", 0: "Associations nb"}, axis=1
-            )
+            tmp_df = tmp_df.rename({"symbol": "Genes nb", "MAP": "Exons nb", 0: "Associations nb"}, axis=1)
 
             if glob is True:
                 t = "global"
             else:
                 t = "detailed"
-            tmp_df.to_excel(
-                self.output_dir
-                + self.subdirs_output_dir[1]
-                + "table_barplot_{}.xlsx".format(t)
-            )
+            tmp_df.to_excel(self.output_dir + self.subdirs_output_dir[1] + "table_barplot_{}.xlsx".format(t))
             plt.style.use("ggplot")
             sns.set_context("paper")
             f, ax = plt.subplots(figsize=(15, 7))
@@ -1552,18 +1468,14 @@ class EXOTIC:
             ax.grid(axis="x")
             plt.xlabel("")
             if glob is True:
-                plt.suptitle(
-                    "Distribution of genes, exons and total associations (for tissue with more than one subtissue) by tissue"
-                )
+                plt.suptitle("Distribution of genes, exons and total associations (for tissue with more than one subtissue) by tissue")
                 plt.legend(ncol=3)
             else:
                 plt.suptitle("Distribution of genes, exons by subtissue")
                 plt.legend(ncol=2)
             f.tight_layout(rect=[0, 0, 1, 0.95])
             f.savefig(
-                self.output_dir
-                + self.subdirs_output_dir[1]
-                + "barplot_tissues_{}.png".format(t),
+                self.output_dir + self.subdirs_output_dir[1] + "barplot_tissues_{}.png".format(t),
                 dpi=300,
             )
 
@@ -1576,22 +1488,12 @@ class EXOTIC:
             print(df)
             if glob is True:
                 for col in ["Medium", "High", "Very-High"]:
-                    df[col] = df[col].apply(
-                        lambda r: list([e.split(" - ")[0] for e in list(r)])
-                    )
+                    df[col] = df[col].apply(lambda r: list([e.split(" - ")[0] for e in list(r)]))
             else:
                 pass
-            df = df.melt(
-                id_vars=["symbol", "MAP"], value_vars=["Medium", "High", "Very-High"]
-            )
+            df = df.melt(id_vars=["symbol", "MAP"], value_vars=["Medium", "High", "Very-High"])
             df = df.explode("value")
-            df = (
-                df[["variable", "value"]]
-                .groupby(["variable", "value"])
-                .size()
-                .reset_index()
-                .pivot(index="value", columns="variable", values=0)
-            )
+            df = df[["variable", "value"]].groupby(["variable", "value"]).size().reset_index().pivot(index="value", columns="variable", values=0)
             df = df.fillna(0)
             df = df.astype(int)
 
@@ -1602,11 +1504,7 @@ class EXOTIC:
 
             df = df[["Medium", "High", "Very-High"]]
 
-            df.to_excel(
-                self.output_dir
-                + self.subdirs_output_dir[1]
-                + "table_barplot_stringency_{}.xlsx".format(t)
-            )
+            df.to_excel(self.output_dir + self.subdirs_output_dir[1] + "table_barplot_stringency_{}.xlsx".format(t))
 
             plt.style.use("ggplot")
             sns.set_context("paper")
@@ -1622,32 +1520,24 @@ class EXOTIC:
             ax.grid(axis="x")
             plt.xlabel("")
             if glob is True:
-                plt.suptitle(
-                    "Distribution of genes, exons and total associations (for tissue with more than one subtissue) by tissue"
-                )
+                plt.suptitle("Distribution of genes, exons and total associations (for tissue with more than one subtissue) by tissue")
 
             else:
                 plt.suptitle("Distribution of genes, exons by subtissue")
             plt.legend(ncol=3)
             f.tight_layout(rect=[0, 0, 1, 0.95])
             f.savefig(
-                self.output_dir
-                + self.subdirs_output_dir[1]
-                + "barplot_tissues_stringency_{}.png".format(t),
+                self.output_dir + self.subdirs_output_dir[1] + "barplot_tissues_stringency_{}.png".format(t),
                 dpi=300,
             )
 
-    def run_config(
-        self, config, intermediate_file, output_dir, disease_genes_multi_iso=list()
-    ):
+    def run_config(self, config, intermediate_file, output_dir, disease_genes_multi_iso=list()):
         for rare in [True]:
             # m = multiprocessing.Manager()
             # l = list()
             # parmap.starmap(self.mp_pext_search_exon_of_interest, list(zip(tmp_genes)),
             #    intermediate_file, l, config, rare, pm_pbar=True, pm_processes=self.cpus)
-            concat_df = self.mp_pext_search_exon_of_interest(
-                intermediate_file, config, rare, output_dir, disease_genes_multi_iso
-            )
+            concat_df = self.mp_pext_search_exon_of_interest(intermediate_file, config, rare, output_dir, disease_genes_multi_iso)
             # self.heatmap_associations_between_tissues(concat_df)
             # self.barplot_stringency_nb(concat_df)
             # self.barplot_gene_exon_nb(concat_df)
@@ -1663,9 +1553,7 @@ class EXOTIC:
             return concat_df
 
     @staticmethod
-    def mp_pext_search_exon_of_interest(
-        df, config_search, rare, output_dir, disease_genes_multi_iso=list()
-    ):
+    def mp_pext_search_exon_of_interest(df, config_search, rare, output_dir, disease_genes_multi_iso=list()):
         # pd.options.display.max_columns = 10
         # pd.reset_option('all')
 
@@ -1730,20 +1618,13 @@ class EXOTIC:
         df = df.sort_values(by=["MAP", "variable"])
 
         # RARE EXONS
-        gene_df = df.loc[
-            (df["Ratio_num"] <= config_search["Presence"]["Exon_frequency_cutoff"])
-        ].reset_index(drop=True)
+        gene_df = df.loc[(df["Ratio_num"] <= config_search["Presence"]["Exon_frequency_cutoff"])].reset_index(drop=True)
 
         # print(gene_df)
         print(gene_df.symbol.nunique())
         print(gene_df.MAP.nunique())
         # WEAK GLOBAL EXPRESSION
-        gene_df = gene_df.loc[
-            (
-                gene_df["mean_proportion"]
-                < config_search["Presence"]["Global_max_expression"]
-            )
-        ].reset_index(drop=True)
+        gene_df = gene_df.loc[(gene_df["mean_proportion"] < config_search["Presence"]["Global_max_expression"])].reset_index(drop=True)
         # print(gene_df)
         print(gene_df.symbol.nunique())
         print(gene_df.MAP.nunique())
@@ -1758,9 +1639,7 @@ class EXOTIC:
             [
                 gene_df[["MAP"]].reset_index(drop=True),
                 z_df.add_suffix("_zscore").reset_index(drop=True),
-                gene_df[gene_df.columns[8:]]
-                .add_suffix("_pextvalue")
-                .reset_index(drop=True),
+                gene_df[gene_df.columns[8:]].add_suffix("_pextvalue").reset_index(drop=True),
             ],
             axis=1,
         )
@@ -1773,9 +1652,7 @@ class EXOTIC:
 
             for i in ["Medium", "High", "Very-High"]:
                 r[i] = []
-            for (t1, z), (t2, p) in zip(
-                r_filter_zscore.items(), r_filter_pextvalue.items()
-            ):
+            for (t1, z), (t2, p) in zip(r_filter_zscore.items(), r_filter_pextvalue.items()):
                 t = t1.replace("_zscore", "")
                 if z_score_list[0] <= z < z_score_list[1] and p > 0.1:
                     r["Medium"].append(t)
@@ -1947,9 +1824,7 @@ class EXOTIC:
 
     def compare_exons_gtex_profile(self, df, exon_usage=False):
         def gtex_rank_v_profile(r):
-            tissues_rank = self.GTEx_v_profile.loc[
-                self.GTEx_v_profile["symbol"] == r["symbol"], r["OK"]
-            ].values.tolist()
+            tissues_rank = self.GTEx_v_profile.loc[self.GTEx_v_profile["symbol"] == r["symbol"], r["OK"]].values.tolist()
             return tissues_rank[0]
 
         def apply_outer_tissues_ok_pext_gtex(r):
@@ -1967,9 +1842,7 @@ class EXOTIC:
             else:
                 return pext_tissues
 
-        merge_df = pd.merge(
-            df, self.GTEx_v_profile[["symbol", "H_profile", "H_tissues"]], on="symbol"
-        )
+        merge_df = pd.merge(df, self.GTEx_v_profile[["symbol", "H_profile", "H_tissues"]], on="symbol")
 
         merge_df["Tissues_rank"] = merge_df.apply(gtex_rank_v_profile, axis=1)
 
@@ -1983,33 +1856,21 @@ class EXOTIC:
         # print(merge_df.symbol.nunique())
         # print(merge_df.MAP.nunique())
 
-        merge_df["Supertissues_gene"] = merge_df.loc[
-            merge_df["H_profile"] == "Specific"
-        ].H_tissues.apply(lambda r: list(set([e.split(" - ")[0] for e in list(r)])))
-        merge_df["Supertissues_gene"] = merge_df["Supertissues_gene"].apply(
-            lambda d: d if isinstance(d, list) else []
-        )
-        merge_df["Supertissues_exon"] = merge_df.OK.apply(
+        merge_df["Supertissues_gene"] = merge_df.loc[merge_df["H_profile"] == "Specific"].H_tissues.apply(
             lambda r: list(set([e.split(" - ")[0] for e in list(r)]))
         )
+        merge_df["Supertissues_gene"] = merge_df["Supertissues_gene"].apply(lambda d: d if isinstance(d, list) else [])
+        merge_df["Supertissues_exon"] = merge_df.OK.apply(lambda r: list(set([e.split(" - ")[0] for e in list(r)])))
 
         merge_df["Corrected_Supertissues"] = merge_df.apply(
-            lambda r: list(
-                set(r["Supertissues_exon"]).difference(set(r["Supertissues_gene"]))
-            ),
+            lambda r: list(set(r["Supertissues_exon"]).difference(set(r["Supertissues_gene"]))),
             axis=1,
         )
-        merge_df["Corrected_Tissues"] = merge_df.loc[
-            merge_df["H_profile"] == "Specific"
-        ].apply(
-            lambda r: [
-                e for e in r["OK"] if e.split(" - ")[0] in r["Corrected_Supertissues"]
-            ],
+        merge_df["Corrected_Tissues"] = merge_df.loc[merge_df["H_profile"] == "Specific"].apply(
+            lambda r: [e for e in r["OK"] if e.split(" - ")[0] in r["Corrected_Supertissues"]],
             axis=1,
         )
-        merge_df.loc[merge_df["H_profile"] == "All", "Corrected_Tissues"] = merge_df[
-            "OK"
-        ]
+        merge_df.loc[merge_df["H_profile"] == "All", "Corrected_Tissues"] = merge_df["OK"]
         # merge_df = merge_df.loc[merge_df["Corrected_Tissues"].str.len() > 0]
 
         merge_df.to_parquet(self.exotic_files["exotic_gtex_comparison_path"])
@@ -2061,12 +1922,8 @@ class EXOTIC:
 
         complete_df = complete_df.loc[complete_df["symbol"].isin(d_genes.Name.unique())]
 
-        df = complete_df.loc[
-            complete_df["H_profile"] == "Specific", ["symbol", "H_tissues", "H_profile"]
-        ]
-        df["Supertissues"] = df["H_tissues"].apply(
-            lambda r: list(set([e.split(" - ")[0] for e in r]))
-        )
+        df = complete_df.loc[complete_df["H_profile"] == "Specific", ["symbol", "H_tissues", "H_profile"]]
+        df["Supertissues"] = df["H_tissues"].apply(lambda r: list(set([e.split(" - ")[0] for e in r])))
 
         # print(df[df['H_tissues'].map(lambda d: len(d)) > 0])
 
@@ -2086,11 +1943,7 @@ class EXOTIC:
         # duplicated = omim.loc[omim.duplicated(keep=False, subset=['OMIM', 'Pheno_OMIM', 'Pheno_prefered_title'])]
         # duplicated.apply(omim_compare_pheno_name_to_prefered_title, axis=1)
 
-        omim = omim.loc[
-            ~omim.duplicated(
-                keep="last", subset=["OMIM", "Pheno_OMIM", "Pheno_prefered_title"]
-            )
-        ]
+        omim = omim.loc[~omim.duplicated(keep="last", subset=["OMIM", "Pheno_OMIM", "Pheno_prefered_title"])]
 
         # df = df.loc[df['variable'] == 'PEXT_value']
         # df = df.loc[df['symbol'] == 'BIN1']
@@ -2120,32 +1973,20 @@ class EXOTIC:
                                 for omim_body_part in mapping_omim_gtex[t]:
                                     # if omim_tmp[omim_body_part]:
                                     # print(omim_body_part in omim_tmp)
-                                    if (
-                                        omim_body_part in omim_tmp
-                                        and omim_tmp[omim_body_part] is not None
-                                    ):
+                                    if omim_body_part in omim_tmp and omim_tmp[omim_body_part] is not None:
                                         # print(omim_tmp[omim_body_part])
                                         omim_associations.append(
                                             {
                                                 "symbol": row["symbol"],
                                                 # 'MAP': row['MAP'],
-                                                "OMIM_pheno_gene_level": pheno[
-                                                    "Pheno_OMIM"
-                                                ],
-                                                "OMIM_pheno_name_gene_level": pheno[
-                                                    "Pheno_Name"
-                                                ],
+                                                "OMIM_pheno_gene_level": pheno["Pheno_OMIM"],
+                                                "OMIM_pheno_name_gene_level": pheno["Pheno_Name"],
                                                 "Tissue_gene_level": t,
                                                 "Supertissue": t.split(" - ")[0],
                                                 "OMIM_body_part_gene_level": omim_body_part,
                                                 # "OMIM_details_gene_level": [
                                                 # e.split(" {")[0][1:] for e in omim_tmp[omim_body_part].split("\n"),
-                                                "OMIM_details_gene_level": [
-                                                    e.split(" {")[0]
-                                                    for e in eval(
-                                                        omim_tmp[omim_body_part]
-                                                    )[0].splitlines()
-                                                ],
+                                                "OMIM_details_gene_level": [e.split(" {")[0] for e in eval(omim_tmp[omim_body_part])[0].splitlines()],
                                             }
                                         )
 
@@ -2178,9 +2019,7 @@ class EXOTIC:
             print(self.output_dir + "PHENOTYPES/")
             # omim_associations.to_parquet(self.output_dir + 'PHENOTYPES/' + "matrix_omim_gene_level_wt_brain.xlsx", index=False)
             omim_associations.to_excel(
-                self.output_dir
-                + "PHENOTYPES/"
-                + "matrix_omim_gene_level_corrected_neurologic.xlsx",
+                self.output_dir + "PHENOTYPES/" + "matrix_omim_gene_level_corrected_neurologic.xlsx",
                 index=False,
             )
             exit()
@@ -2239,26 +2078,16 @@ class EXOTIC:
         pext = intermediate_file.filter(regex="pext")
 
         exotic = intermediate_file.filter(regex="exotic")
-        pext["Max"] = pext.progress_apply(
-            lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1
-        )
+        pext["Max"] = pext.progress_apply(lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1)
         pext["MAP"] = intermediate_file["MAP"]
         pext["symbol"] = intermediate_file["symbol"]
 
-        exotic["Max"] = exotic.progress_apply(
-            lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1
-        )
+        exotic["Max"] = exotic.progress_apply(lambda r: max(r.dropna()) if r.dropna().shape[0] > 0 else np.nan, axis=1)
         exotic["Tissues_Max"] = exotic.progress_apply(
-            lambda r: [
-                list(exotic.columns)[j].replace("_exotic", "")
-                for j, e in enumerate(r[:-1])
-                if e == r["Max"]
-            ],
+            lambda r: [list(exotic.columns)[j].replace("_exotic", "") for j, e in enumerate(r[:-1]) if e == r["Max"]],
             axis=1,
         )
-        exotic["Tissues_Max_organs"] = exotic["Tissues_Max"].apply(
-            lambda r: list(set([e.split(" - ")[0] for e in r]))
-        )
+        exotic["Tissues_Max_organs"] = exotic["Tissues_Max"].apply(lambda r: list(set([e.split(" - ")[0] for e in r])))
         exotic["pext_max"] = pext["Max"]
 
         exotic["MAP"] = intermediate_file["MAP"]
@@ -2271,11 +2100,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.90 and c < 0.95
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.90 and c < 0.95],
                 axis=1,
             )
         )
@@ -2283,11 +2108,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.95 and c < 0.99
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.95 and c < 0.99],
                 axis=1,
             )
         )
@@ -2295,11 +2116,7 @@ class EXOTIC:
             exotic.filter(regex="exotic")
             .fillna(0)
             .apply(
-                lambda r: [
-                    exotic.columns[j].replace("_exotic", "")
-                    for j, c in enumerate(r)
-                    if c >= 0.99
-                ],
+                lambda r: [exotic.columns[j].replace("_exotic", "") for j, c in enumerate(r) if c >= 0.99],
                 axis=1,
             )
         )
@@ -2307,11 +2124,7 @@ class EXOTIC:
             pext.filter(regex="pext")
             .fillna(0)
             .apply(
-                lambda r: [
-                    pext.columns[j].replace("_pextvalue", "")
-                    for j, c in enumerate(r)
-                    if c > 0.1
-                ],
+                lambda r: [pext.columns[j].replace("_pextvalue", "") for j, c in enumerate(r) if c > 0.1],
                 axis=1,
             )
         )
@@ -2330,9 +2143,7 @@ class EXOTIC:
             lambda r: list(set(r["tissues_OK_gold"]).intersection(set(r["pext_OK"]))),
             axis=1,
         )
-        exotic["OK"] = exotic.apply(
-            lambda r: r["OK_bronze"] + r["OK_silver"] + r["OK_gold"], axis=1
-        )
+        exotic["OK"] = exotic.apply(lambda r: r["OK_bronze"] + r["OK_silver"] + r["OK_gold"], axis=1)
 
         exotic = exotic[
             [
@@ -2410,11 +2221,10 @@ class EXOTIC:
         ]
 
         exotic.to_parquet(self.exotic_files["exotic_ok_path"])
+
         return exotic
 
-    def compare_to_omim_basic_gene_exon_level(
-        self, df, omim, d_genes, omim_detailed=True
-    ):
+    def compare_to_omim_basic_gene_exon_level(self, df, omim, d_genes, omim_detailed=True):
 
         df = df.loc[df["Corrected_Tissues"].str.len() > 0]
         df = df.loc[df["OK"].str.len() > 0]
@@ -2435,11 +2245,7 @@ class EXOTIC:
 
         omim = omim.where(pd.notnull(omim), None)
 
-        omim = omim.loc[
-            ~omim.duplicated(
-                keep="last", subset=["OMIM", "Pheno_OMIM", "Pheno_prefered_title"]
-            )
-        ]
+        omim = omim.loc[~omim.duplicated(keep="last", subset=["OMIM", "Pheno_OMIM", "Pheno_prefered_title"])]
 
         # print(gene_level_df.symbol.nunique())
         # print(gene_level_df.MAP.nunique())
@@ -2458,15 +2264,8 @@ class EXOTIC:
                     for t in row["Corrected_Tissues"]:
                         if t in mapping_omim_gtex:
                             for omim_body_part in mapping_omim_gtex[t]:
-                                if (
-                                    omim_body_part in omim_tmp
-                                    and omim_tmp[omim_body_part] is not None
-                                ):
-                                    threshold = [
-                                        e.replace("OK_", "")
-                                        for e in ["OK_bronze", "OK_silver", "OK_gold"]
-                                        if t in row[e]
-                                    ][0]
+                                if omim_body_part in omim_tmp and omim_tmp[omim_body_part] is not None:
+                                    threshold = [e.replace("OK_", "") for e in ["OK_bronze", "OK_silver", "OK_gold"] if t in row[e]][0]
                                     omim_associations.append(
                                         {
                                             "symbol": row["symbol"],
@@ -2475,20 +2274,11 @@ class EXOTIC:
                                             "H_tissues": row["H_tissues"],
                                             "Threshold": threshold,
                                             "EXOTIC_value": row[t + "_exotic"],
-                                            "OMIM_pheno_exon_level": pheno[
-                                                "Pheno_OMIM"
-                                            ],
-                                            "OMIM_pheno_name_exon_level": pheno[
-                                                "Pheno_Name"
-                                            ],
+                                            "OMIM_pheno_exon_level": pheno["Pheno_OMIM"],
+                                            "OMIM_pheno_name_exon_level": pheno["Pheno_Name"],
                                             "Tissue_exon_level": t,
                                             "OMIM_body_part_exon_level": omim_body_part,
-                                            "OMIM_details_exon_level": [
-                                                e.split(" {")[0]
-                                                for e in eval(omim_tmp[omim_body_part])[
-                                                    0
-                                                ].splitlines()
-                                            ],
+                                            "OMIM_details_exon_level": [e.split(" {")[0] for e in eval(omim_tmp[omim_body_part])[0].splitlines()],
                                         }
                                     )
         omim_associations = pd.DataFrame(omim_associations)
@@ -2527,9 +2317,7 @@ class EXOTIC:
             .reset_index(drop=True)
         )
 
-        output_df = output_df[
-            [c for c in list(output_df.columns) if "_exotic" not in c]
-        ]
+        output_df = output_df[[c for c in list(output_df.columns) if "_exotic" not in c]]
 
         print(output_df.loc[output_df["symbol"] == "TBC1D24"])
 
@@ -2664,11 +2452,7 @@ class EXOTIC:
 
         omim = omim.where(pd.notnull(omim), None)
 
-        omim = omim.loc[
-            ~omim.duplicated(
-                keep="last", subset=["OMIM", "Pheno_OMIM", "Pheno_prefered_title"]
-            )
-        ]
+        omim = omim.loc[~omim.duplicated(keep="last", subset=["OMIM", "Pheno_OMIM", "Pheno_prefered_title"])]
 
         omim_associations = list()
         for i, row in df.iterrows():
@@ -2684,15 +2468,8 @@ class EXOTIC:
                     for t in row["OK"]:
                         if t in mapping_omim_gtex:
                             for omim_body_part in mapping_omim_gtex[t]:
-                                if (
-                                    omim_body_part in omim_tmp
-                                    and omim_tmp[omim_body_part] is not None
-                                ):
-                                    threshold = [
-                                        e.replace("OK_", "")
-                                        for e in ["OK_bronze", "OK_silver", "OK_gold"]
-                                        if t in row[e]
-                                    ][0]
+                                if omim_body_part in omim_tmp and omim_tmp[omim_body_part] is not None:
+                                    threshold = [e.replace("OK_", "") for e in ["OK_bronze", "OK_silver", "OK_gold"] if t in row[e]][0]
 
                                     omim_associations.append(
                                         {
@@ -2700,22 +2477,13 @@ class EXOTIC:
                                             "MAP": row["MAP"],
                                             "Corrected_Tissues": row["OK"],
                                             # "H_tissues": row["H_tissues"],
-                                            "OMIM_pheno_exon_level": pheno[
-                                                "Pheno_OMIM"
-                                            ],
+                                            "OMIM_pheno_exon_level": pheno["Pheno_OMIM"],
                                             "Threshold": threshold,
                                             "EXOTIC_value": row[t + "_exotic"],
-                                            "OMIM_pheno_name_exon_level": pheno[
-                                                "Pheno_Name"
-                                            ],
+                                            "OMIM_pheno_name_exon_level": pheno["Pheno_Name"],
                                             "Tissue_exon_level": t,
                                             "OMIM_body_part_exon_level": omim_body_part,
-                                            "OMIM_details_exon_level": [
-                                                e.split(" {")[0]
-                                                for e in eval(omim_tmp[omim_body_part])[
-                                                    0
-                                                ].splitlines()
-                                            ],
+                                            "OMIM_details_exon_level": [e.split(" {")[0] for e in eval(omim_tmp[omim_body_part])[0].splitlines()],
                                         }
                                     )
         omim_associations = pd.DataFrame(omim_associations)
@@ -2723,40 +2491,14 @@ class EXOTIC:
         print(omim_associations)
         print(omim_associations.symbol.nunique())
         print(omim_associations.MAP.nunique())
-        print(
-            omim_associations.loc[
-                omim_associations["Threshold"] == "bronze", "symbol"
-            ].nunique()
-        )
-        print(
-            omim_associations.loc[
-                omim_associations["Threshold"] == "silver", "symbol"
-            ].nunique()
-        )
-        print(
-            omim_associations.loc[
-                omim_associations["Threshold"] == "gold", "symbol"
-            ].nunique()
-        )
-        print(
-            omim_associations.loc[
-                omim_associations["Threshold"] == "bronze", "MAP"
-            ].nunique()
-        )
-        print(
-            omim_associations.loc[
-                omim_associations["Threshold"] == "silver", "MAP"
-            ].nunique()
-        )
-        print(
-            omim_associations.loc[
-                omim_associations["Threshold"] == "gold", "MAP"
-            ].nunique()
-        )
+        print(omim_associations.loc[omim_associations["Threshold"] == "bronze", "symbol"].nunique())
+        print(omim_associations.loc[omim_associations["Threshold"] == "silver", "symbol"].nunique())
+        print(omim_associations.loc[omim_associations["Threshold"] == "gold", "symbol"].nunique())
+        print(omim_associations.loc[omim_associations["Threshold"] == "bronze", "MAP"].nunique())
+        print(omim_associations.loc[omim_associations["Threshold"] == "silver", "MAP"].nunique())
+        print(omim_associations.loc[omim_associations["Threshold"] == "gold", "MAP"].nunique())
         omim_associations.to_excel(
-            self.output_dir
-            + "PHENOTYPES/"
-            + "table_OMIM_exon_level_matrix_corrected.xlsx",
+            self.output_dir + "PHENOTYPES/" + "table_OMIM_exon_level_matrix_corrected.xlsx",
             index=False,
         )
 
@@ -2992,9 +2734,7 @@ class EXOTIC:
         print(lite_df.symbol.nunique())
         print(lite_df.MAP.nunique())
 
-        lite_df.to_excel(
-            self.output_dir + "VARIATIONS/" + "genes_pubmed_test.xlsx", index=False
-        )
+        lite_df.to_excel(self.output_dir + "VARIATIONS/" + "genes_pubmed_test.xlsx", index=False)
         exit()
 
         for j, r in lite_df.iterrows():
@@ -3008,15 +2748,8 @@ class EXOTIC:
 
         exit()
 
-        lite_df_rs = (
-            lite_df[["rs", "citation_id"]]
-            .groupby("rs")
-            .agg({"citation_id": ",".join})
-            .reset_index()
-        )
-        lite_df_rs = pd.Series(
-            lite_df_rs.citation_id.values, index=lite_df_rs.rs
-        ).to_dict()
+        lite_df_rs = lite_df[["rs", "citation_id"]].groupby("rs").agg({"citation_id": ",".join}).reset_index()
+        lite_df_rs = pd.Series(lite_df_rs.citation_id.values, index=lite_df_rs.rs).to_dict()
         lite_df["citation_id"] = lite_df["rs"].map(lite_df_rs)
         lite_df = lite_df.drop_duplicates(subset=["alleleid", "MAP", "citation_id"])
         lite_df = lite_df.dropna(subset=["citation_id"])
@@ -3027,17 +2760,7 @@ class EXOTIC:
         print(lite_df.symbol.nunique())
         print(lite_df.MAP.nunique())
         print(lite_df.rs.nunique())
-        print(
-            len(
-                set(
-                    [
-                        c
-                        for e in lite_df.citation_id.values.tolist()
-                        for c in e.split(",")
-                    ]
-                )
-            )
-        )
+        print(len(set([c for e in lite_df.citation_id.values.tolist() for c in e.split(",")])))
         print(lite_df[["alleleid", "MAP", "citation_id"]])
         lite_df.to_excel(output_dir + "protocole_variants_publi.xlsx")
         exit()
@@ -3061,9 +2784,7 @@ class EXOTIC:
         # sep=",",
         # )
         # return df
-        url = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?tool=my_tool&email=my_email@example.com&ids={}&format=json".format(
-            pmid
-        )
+        url = "https://www.ncbi.nlm.nih.gov/pmc/utils/idconv/v1.0/?tool=my_tool&email=my_email@example.com&ids={}&format=json".format(pmid)
         r = requests.get(url)
         j = r.json()
         pubmed_id = j["records"][0]["pmid"]
@@ -3071,9 +2792,7 @@ class EXOTIC:
             pubmed_id = j["records"][0]["pmcid"]
         pubtator_cat = "pmc" if pubmed_id[0] == "P" else "pm"
         if pubtator_cat == "pmc":
-            pubtator_url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/biocjson?{}ids={}".format(
-                pubtator_cat, pubmed_id
-            )
+            pubtator_url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/biocjson?{}ids={}".format(pubtator_cat, pubmed_id)
             pubtator_json = requests.get(pubtator_url).json()
             pprint(pubtator_json)
             exit()
@@ -3093,9 +2812,7 @@ class EXOTIC:
             for tmp_id in pmc_ids.split(","):
                 # print(tmp_id, pmc_ids)
 
-                url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/biocjson?{}ids={}".format(
-                    str(pm_pmc), str(tmp_id)
-                )
+                url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/biocjson?{}ids={}".format(str(pm_pmc), str(tmp_id))
                 r = requests.get(url)
                 if r.text:
                     l_json.append(r.json())
@@ -3106,9 +2823,7 @@ class EXOTIC:
             for tmp_id in pm_ids.split(","):
                 # print(tmp_id, pm_ids)
 
-                url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/biocjson?{}ids={}".format(
-                    str(pm_pmc), str(tmp_id)
-                )
+                url = "https://www.ncbi.nlm.nih.gov/research/pubtator-api/publications/export/biocjson?{}ids={}".format(str(pm_pmc), str(tmp_id))
                 r = requests.get(url)
                 if r.text:
                     l_json.append(r.json())
@@ -3127,12 +2842,7 @@ class EXOTIC:
     def pubtator_analysis(content, row):
         print(row)
         pext_tissues = eval(row["PEXT_specific_tissues"])
-        tissues_decomposed = [
-            sub_w.lower()
-            for tissue in pext_tissues
-            for w in tissue.split(" - ")
-            for sub_w in w.split(" ")
-        ]
+        tissues_decomposed = [sub_w.lower() for tissue in pext_tissues for w in tissue.split(" - ") for sub_w in w.split(" ")]
         for elem in content:
             try:
                 for passage in elem["passages"]:
@@ -3149,9 +2859,7 @@ class EXOTIC:
 
     @staticmethod
     def litvar_api(rsid):
-        url = "https://www.ncbi.nlm.nih.gov/research/bionlp/litvar/api/v1/entity/litvar/rs{}%23%23".format(
-            str(rsid)
-        )
+        url = "https://www.ncbi.nlm.nih.gov/research/bionlp/litvar/api/v1/entity/litvar/rs{}%23%23".format(str(rsid))
         r = requests.get(url)
         if r.text:
             print(rsid, r)
@@ -3171,17 +2879,11 @@ class EXOTIC:
         )
 
         hpo_pext_selected["PEXT_spec_tissues"] = hpo_pext_selected.apply(
-            lambda r: [
-                hpo_pext_selected.columns[j + 5]
-                for j, col in enumerate(r[5:-12])
-                if col == "True"
-            ],
+            lambda r: [hpo_pext_selected.columns[j + 5] for j, col in enumerate(r[5:-12]) if col == "True"],
             axis=1,
         )
 
-        hpo_pext_selected["HPO_groupped"] = hpo_pext_selected["HPO_groupped"].fillna(
-            "None"
-        )
+        hpo_pext_selected["HPO_groupped"] = hpo_pext_selected["HPO_groupped"].fillna("None")
         hpo_pext_selected = hpo_pext_selected[
             [
                 "HGNC ID",
@@ -3203,24 +2905,19 @@ class Variants_CCRS:
     ):
         # YAML FILES CONFIG
         yaml = load_config_file()
+        self.files = yaml
         self.exotic_files = yaml["EXOTIC"]
 
-        self.tmp_ccrs_path = "/gstock/EXOTIC/data/VARIATIONS/CCRS_modified.parquet"
-        self.tmp_variants_path = (
-            "/gstock/EXOTIC/data/VARIATIONS/ClinVar_gnomAD_all_2021.parquet"
-        )
-        self.tmp_clinvar_ccrs_path = (
-            "/gstock/EXOTIC/data/VARIATIONS/ClinVar_CCRS_gnomAD_2021.parquet"
-        )
-        self.tmp_phylocsf_path = (
-            "/gstock/EXOTIC/data/CONSERVATION/phyloCSF_modified_2021.parquet"
-        )
+        self.tmp_ccrs_path = "/gstock/EXOTIC/data/VARIATIONS/CCRS_modified_refseq_corrected.parquet"
+        self.tmp_variants_path = "/gstock/EXOTIC/data/VARIATIONS/ClinVar_gnomAD_all_2021_refseq_corrected.parquet"
+        self.tmp_clinvar_ccrs_path = "/gstock/EXOTIC/data/VARIATIONS/ClinVar_CCRS_gnomAD_2021_refseq_corrected.parquet"
+        self.tmp_phylocsf_path = "/gstock/EXOTIC/data/CONSERVATION/phyloCSF_modified_2021_refseq_corrected.parquet"
         self.gnomad_pathogenic_genes_path = "/gstock/biolo_datasets/variation/variation_sets/gnomAD/EXOME_MISTIC/RAW/gnomad_clinvar_genes.csv.gz"
-        self.gnomad_pathogenic_genes = self.read_gnomad_file()
+        # self.gnomad_pathogenic_genes = self.read_gnomad_file()
 
         # self.process_ccrs()
-        self.process_clinvar()
-        # self.merge_clinvar_ccrs()
+        # self.process_clinvar()
+        self.merge_clinvar_ccrs()
         # self.process_phylocsf()
         exit()
 
@@ -3237,6 +2934,7 @@ class Variants_CCRS:
             compression="gzip",
             sep="\t",
             low_memory=False,
+            # nrows=100000,
         )
         # gnomad_clinvar_genes[
         #     ["CHROM", "POS", "REF", "ALT"]
@@ -3247,46 +2945,61 @@ class Variants_CCRS:
         gnomad_clinvar_genes["ALT"] = gnomad_clinvar_genes["ALT"].apply(eval)
         gnomad_clinvar_genes = gnomad_clinvar_genes.explode("Genes")
         gnomad_clinvar_genes = gnomad_clinvar_genes.explode("ALT")
-        gnomad_clinvar_genes = gnomad_clinvar_genes.loc[
-            (gnomad_clinvar_genes["REF"].str.len() < 50)
-            & (gnomad_clinvar_genes["ALT"].str.len() < 50)
-        ]
+        gnomad_clinvar_genes = gnomad_clinvar_genes.loc[(gnomad_clinvar_genes["REF"].str.len() < 50) & (gnomad_clinvar_genes["ALT"].str.len() < 50)]
         gnomad_clinvar_genes = gnomad_clinvar_genes.rename({"Genes": "Gene"}, axis=1)
+        gnomad_clinvar_genes["Status"] = "Benign"
 
-        # gnomad_clinvar_genes["Status"] = "Benign"
+        print(gnomad_clinvar_genes)
+
         # gnomad_clinvar_genes = gnomad_clinvar_gen es.loc[
         #     (gnomad_clinvar_genes["ALT"].str.len() == 1)
         #     & (gnomad_clinvar_genes["REF"].str.len() == 1)
         # ]
         return gnomad_clinvar_genes
 
+    def init_mp_test(self, gene, l_ccrs, refseq, ccrs):
+        refseq_gene = refseq.loc[refseq["Gene"] == gene]
+        ccrs_gene = ccrs.loc[ccrs["CCRS_Gene"] == gene]
+        l_ccrs.append(self.mapping_ccrs(refseq_gene, ccrs_gene))
+
     def process_ccrs(self):
         if os.path.isfile(self.tmp_ccrs_path) is True:
+            print("CCRS")
 
             ## REFSEQ DETAILED
             refseq = pd.read_csv(
-                self.exotic_files["refseq_path"],
+                # self.exotic_files["refseq_path"],
+                self.files["RefSeq"]["refseq_corrected_lite"].replace(".parquet", ".csv.gz"),
                 compression="gzip",
                 sep="\t",
                 low_memory=False,
+                # nrows=1000,
             ).sort_values(by=["Gene", "ranges"])
-            refseq = refseq.dropna(subset=["HGNC"])
-            refseq["HGNC"] = refseq["HGNC"].astype(int)
-            refseq["Ratio_num"] = refseq["Ratio"].apply(eval)
-            refseq = refseq.loc[refseq["mRNA_nb"] > 1]
+
+            refseq.columns = [c.replace("new_", "") for c in refseq.columns]
+
+            print(refseq)
+            print(list(refseq.columns))
+            # refseq = refseq.dropna(subset=["HGNC"])
+            # refseq["HGNC"] = refseq["HGNC"].astype(int)
+            refseq = refseq.loc[(refseq["mRNA_nb_total"] > 1) & (refseq["CDS_count"] > 1)]
             # refseq = refseq.head(1000)
 
             # CCRS
             ccrs = pd.read_parquet(self.exotic_files["refseq_ccrs"])
+            # ccrs = ccrs.head(1000)
 
             l_ccrs = list()
+
+            # m = multiprocessing.Manager()
+            # l_ccrs = m.list()
+            # parmap.starmap(self.init_mp_test, list(zip(refseq.Gene.unique()))[:100], l_ccrs, refseq, ccrs, pm_pbar=True)
+
             for gene in tqdm(refseq.Gene.unique()):
                 refseq_gene = refseq.loc[refseq["Gene"] == gene]
                 ccrs_gene = ccrs.loc[ccrs["CCRS_Gene"] == gene]
                 l_ccrs.append(self.mapping_ccrs(refseq_gene, ccrs_gene))
 
-            print(pd.concat(l_ccrs, axis=0))
-            exit()
             concat_ccrs = pd.concat(list(l_ccrs), axis=0)
             concat_ccrs = concat_ccrs.rename({"CCRS_Gene": "Gene"}, axis=1)
             merge_df = pd.merge(
@@ -3298,17 +3011,14 @@ class Variants_CCRS:
             merge_df.loc[merge_df["Ratio_num"] < 1, "Const_Alt"] = "Alt"
             bins = [0, 0.2, 0.4, 0.6, 0.8, 1]
             labels = bins.copy()
-            labels_ratio = [
-                str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1))
-                for j in range(len(labels) - 1)
-            ]
+            labels_ratio = [str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1)) for j in range(len(labels) - 1)]
             merge_df["Ratio_num_bins"] = pd.cut(
                 merge_df["Ratio_num"],
                 bins=bins,
                 labels=labels_ratio,
                 include_lowest=True,
             )
-            merge_df.to_parquet(tmp_ccrs_path, index=False)
+            merge_df.to_parquet(self.tmp_ccrs_path, index=False)
 
         else:
             merge_df = pd.read_parquet(self.tmp_ccrs_path)
@@ -3316,18 +3026,23 @@ class Variants_CCRS:
 
     def process_clinvar(self):
         if os.path.isfile(self.tmp_variants_path) is True:
+            print("Variants")
 
             ## REFSEQ DETAILED
             refseq = pd.read_csv(
-                self.exotic_files["refseq_path"],
+                # self.exotic_files["refseq_path"],
+                self.files["RefSeq"]["refseq_corrected_lite"].replace(".parquet", ".csv.gz"),
                 compression="gzip",
                 sep="\t",
                 low_memory=False,
+                # nrows=1000,
             ).sort_values(by=["Gene", "ranges"])
-            refseq = refseq.dropna(subset=["HGNC"])
-            refseq["HGNC"] = refseq["HGNC"].astype(int)
-            refseq["Ratio_num"] = refseq["Ratio"].apply(eval)
-            refseq = refseq.loc[refseq["mRNA_nb"] > 1]
+            refseq.columns = [c.replace("new_", "") for c in refseq.columns]
+
+            # refseq = refseq.dropna(subset=["HGNC"])
+            # refseq["HGNC"] = refseq["HGNC"].astype(int)
+            # refseq["Ratio_num"] = refseq["Ratio"].apply(eval)
+            refseq = refseq.loc[(refseq["mRNA_nb_total"] > 1) & (refseq["CDS_count"] > 1)]
             # refseq = refseq.head(10000)
 
             ## CLINVAR
@@ -3336,9 +3051,7 @@ class Variants_CCRS:
             clinvar["POS"] = clinvar["POS"].astype(int)
             clinvar["MC"] = clinvar["MC"].apply(lambda r: r.split(",")[0])
             validated_clinvar = clinvar.loc[
-                (clinvar["Status"] == "Pathogenic")
-                & (~clinvar["Real_Status"].str.contains("onflicting") == True)
-                & (clinvar["RS_STARS"] >= 1)
+                (clinvar["Status"] == "Pathogenic") & (~clinvar["Real_Status"].str.contains("onflicting") == True) & (clinvar["RS_STARS"] >= 1)
             ]
             # validated_clinvar = clinvar.loc[(~clinvar["Real_Status"].str.contains("onflicting") == True) & (clinvar["RS_STARS"] >= 1)]
 
@@ -3360,10 +3073,7 @@ class Variants_CCRS:
             )
             validated_clinvar = validated_clinvar.rename({"GENE": "Gene"}, axis=1)
 
-            validated_clinvar = validated_clinvar.loc[
-                (validated_clinvar["ALT"].str.len() == 1)
-                & (validated_clinvar["REF"].str.len() == 1)
-            ]
+            validated_clinvar = validated_clinvar.loc[(validated_clinvar["ALT"].str.len() == 1) & (validated_clinvar["REF"].str.len() == 1)]
             validated_clinvar = (
                 pd.merge(
                     validated_clinvar,
@@ -3381,9 +3091,7 @@ class Variants_CCRS:
             for gene in tqdm(refseq.Gene.unique()):
                 refseq_gene = refseq.loc[refseq["Gene"] == gene]
                 clinvar_gene = validated_clinvar.loc[validated_clinvar["Gene"] == gene]
-                gnomad_gene = self.gnomad_pathogenic_genes.loc[
-                    self.gnomad_pathogenic_genes["Gene"] == gene
-                ]
+                gnomad_gene = self.gnomad_pathogenic_genes.loc[self.gnomad_pathogenic_genes["Gene"] == gene]
                 # if clinvar_gene.empty is False and gnomad_gene.empty is False:
 
                 if clinvar_gene.empty is False:
@@ -3415,10 +3123,7 @@ class Variants_CCRS:
 
             bins = [0, 0.2, 0.4, 0.6, 0.8, 1]
             labels = bins.copy()
-            labels_ratio = [
-                str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1))
-                for j in range(len(labels) - 1)
-            ]
+            labels_ratio = [str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1)) for j in range(len(labels) - 1)]
             merge_df["Ratio_num_bins"] = pd.cut(
                 merge_df["Ratio_num"],
                 bins=bins,
@@ -3434,19 +3139,25 @@ class Variants_CCRS:
         return merge_df
 
     def process_phylocsf(self):
-        if os.path.isfile(self.tmp_phylocsf_path) is False:
+        if os.path.isfile(self.tmp_phylocsf_path) is True:
+            print("phyloCSF")
 
             ## REFSEQ DETAILED
             refseq = pd.read_csv(
-                self.exotic_files["refseq_path"],
+                # self.exotic_files["refseq_path"],
+                self.files["RefSeq"]["refseq_corrected_lite"].replace(".parquet", ".csv.gz"),
                 compression="gzip",
                 sep="\t",
                 low_memory=False,
+                # nrows=1000,
             ).sort_values(by=["Gene", "ranges"])
-            refseq = refseq.dropna(subset=["HGNC"])
-            refseq["HGNC"] = refseq["HGNC"].astype(int)
-            refseq["Ratio_num"] = refseq["Ratio"].apply(eval)
-            refseq = refseq.loc[refseq["mRNA_nb"] > 1]
+
+            refseq.columns = [c.replace("new_", "") for c in refseq.columns]
+
+            # refseq = refseq.dropna(subset=["HGNC"])
+            # refseq["HGNC"] = refseq["HGNC"].astype(int)
+            # refseq["Ratio_num"] = refseq["Ratio"].apply(eval)
+            refseq = refseq.loc[(refseq["mRNA_nb_total"] > 1) & (refseq["CDS_count"] > 1)]
             # refseq = refseq.head(10000)
 
             # phyloCSF
@@ -3471,10 +3182,7 @@ class Variants_CCRS:
             merge_df.loc[merge_df["Ratio_num"] < 1, "Const_Alt"] = "Alt"
             bins = [0, 0.2, 0.4, 0.6, 0.8, 1]
             labels = bins.copy()
-            labels_ratio = [
-                str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1))
-                for j in range(len(labels) - 1)
-            ]
+            labels_ratio = [str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1)) for j in range(len(labels) - 1)]
             merge_df["Ratio_num_bins"] = pd.cut(
                 merge_df["Ratio_num"],
                 bins=bins,
@@ -3495,16 +3203,16 @@ class Variants_CCRS:
             # CLINVAR
             clinvar = pd.read_parquet(self.tmp_variants_path)
             clinvar = clinvar.loc[clinvar["Status"] != "Other"]
+            # print(clinvar.Real_Status.value_counts())
+            # exit()
+
             # clinvar = clinvar.head(100)
 
             # CCRS
             ccrs = pd.read_parquet(self.tmp_ccrs_path)
             bins = [0, 20, 80, 90, 95, 99, 100]
             labels = bins.copy()
-            labels_ratio = [
-                str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1))
-                for j in range(len(labels) - 1)
-            ]
+            labels_ratio = [str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1)) for j in range(len(labels) - 1)]
             ccrs["CCRS_bins"] = pd.cut(
                 ccrs["CCRS_CCR_percentile"],
                 bins=bins,
@@ -3523,9 +3231,9 @@ class Variants_CCRS:
                 pm_pbar=True,
             )
             # for gene in tqdm(clinvar.Gene.unique()):
-            # clinvar_gene = clinvar.loc[clinvar['Gene'] == gene]
-            # ccrs_gene = ccrs.loc[ccrs['Gene'] == gene]
-            # self.mapping_ccrs_clinvar(clinvar_gene, ccrs_gene)
+            # clinvar_gene = clinvar.loc[clinvar["Gene"] == gene]
+            # ccrs_gene = ccrs.loc[ccrs["Gene"] == gene]
+            # l_ccrs.append(self.mapping_ccrs_clinvar(clinvar_gene, ccrs_gene))
 
             concat_ccrs = pd.concat(list(l_ccrs), axis=0)
             # print(concat_ccrs)
@@ -3546,16 +3254,10 @@ class Variants_CCRS:
 
     def mapping_ccrs(self, refseq_gene, ccrs_gene):
         def map_ccrs(r, tmp_l):
-            s = ccrs_gene["CCRS_Start"].between(
-                int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True
-            )
-            e = ccrs_gene["CCRS_End"].between(
-                int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True
-            )
+            s = ccrs_gene["CCRS_Start"].between(int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True)
+            e = ccrs_gene["CCRS_End"].between(int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True)
             concat = pd.concat([s, e], axis=1)
-            concat = concat.loc[
-                (concat["CCRS_Start"] == True) & (concat["CCRS_End"] == True)
-            ]
+            concat = concat.loc[(concat["CCRS_Start"] == True) & (concat["CCRS_End"] == True)]
             concat = ccrs_gene.loc[concat.index]
             concat["ranges"] = r
             tmp_l.append(concat)
@@ -3572,12 +3274,8 @@ class Variants_CCRS:
             r = r_raw["ranges"]
             # print(r_raw)
             # print(phyloCSF_gene)
-            s = phyloCSF_gene["Start"].between(
-                int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True
-            )
-            e = phyloCSF_gene["End"].between(
-                int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True
-            )
+            s = phyloCSF_gene["Start"].between(int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True)
+            e = phyloCSF_gene["End"].between(int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True)
             concat = pd.concat([s, e], axis=1)
             concat = concat.loc[(concat["Start"] == True) & (concat["End"] == True)]
             concat = phyloCSF_gene.loc[concat.index]
@@ -3594,9 +3292,7 @@ class Variants_CCRS:
     def mapping_ccrs_clinvar(self, gene, clinvar, ccrs, l_ccrs):
         def map_ccrs_clinvar(r, tmp_l):
             ranges = r["CCRS_ranges"]
-            m = clinvar_gene["POS"].between(
-                int(ranges.split("-")[0]), int(ranges.split("-")[1]), inclusive=True
-            )
+            m = clinvar_gene["POS"].between(int(ranges.split("-")[0]), int(ranges.split("-")[1]), inclusive=True)
             if True in m.values.tolist():
                 variants_between = clinvar_gene.loc[m.where(m == True).dropna().index]
                 variants_between["CCRS_ranges"] = ranges
@@ -3610,7 +3306,7 @@ class Variants_CCRS:
             tmp_l = list()
             ccrs_gene.apply(lambda r: map_ccrs_clinvar(r, tmp_l), axis=1)
             if tmp_l:
-                l_ccrs.append(pd.concat(tmp_l))
+                return l_ccrs.append(pd.concat(tmp_l))
             else:
                 return pd.DataFrame()
         else:
@@ -3618,9 +3314,7 @@ class Variants_CCRS:
 
     def mapping_clinvar(self, refseq_gene, clinvar_gene):
         def map_variant(r, tmp_l):
-            m = clinvar_gene["POS"].between(
-                int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True
-            )
+            m = clinvar_gene["POS"].between(int(r.split("-")[0]), int(r.split("-")[1]), inclusive=True)
             if True in m.values.tolist():
                 variants_between = clinvar_gene.loc[m.where(m == True).dropna().index]
                 variants_between["ranges"] = r
@@ -3638,110 +3332,15 @@ class Variants_CCRS:
             return pd.DataFrame()
 
 
-class GWAS:
-    def __init__(self):
-        yaml = load_config_file()
-        self.exotic_files = yaml["EXOTIC"]
-        self.gwas_files = yaml["GWAS"]
-
-        gwas = self.load_gwas()
-        variants = self.load_variants()
-        variants = self.filter_variants_EXOTIC(variants)
-
-        self.compare_variants_gwas(gwas, variants)
-
-    def compare_variants_gwas(self, gwas, variants):
-        pd.options.display.max_rows = 100
-        merge = pd.merge(gwas, variants, left_on="SNPS", right_on="rs")
-        print(merge)
-        merge["P-VALUE"] = merge["P-VALUE"].astype(float)
-        merge = merge.loc[merge["P-VALUE"] < 5 * 10e-8]
-        print(merge)
-        merge = merge.loc[merge["Parent term"] != "Other measurement"]
-        print(merge)
-        # merge = merge.loc[merge["Status"] == "Pathogenic"]
-        # print(merge)
-        merge = merge.loc[merge["OK_bronze"].str.len() > 0]
-        print(merge)
-        print(
-            merge[
-                [
-                    "DISEASE/TRAIT",
-                    "OK_bronze",
-                    "Max",
-                    "symbol",
-                    "ranges",
-                    "Ratio_num",
-                    "Real_Status",
-                    "VAR_ID",
-                    "P-VALUE",
-                ]
-            ].drop_duplicates(subset=["DISEASE/TRAIT", "ranges"])
-        )
-        print(merge.symbol.nunique())
-        print(merge.symbol.unique())
-
-    def load_variants(self):
-
-        variants = pd.read_parquet(self.exotic_files["clinvar_gnomad_pathogenic"])
-        variants.loc[variants["Status"] == "Pathogenic", "rs"] = (
-            "rs" + variants.loc[variants["Status"] == "Pathogenic", "rs"]
-        )
-        return variants
-
-    def filter_variants_EXOTIC(self, variants):
-        exotic = pd.read_parquet(self.exotic_files["exotic_ok_path"])
-        exotic = exotic.loc[exotic["OK"].str.len() > 0]
-        exotic["ranges"] = exotic["MAP"].apply(lambda r: r.split("_")[1])
-        exotic_clinvar = pd.merge(
-            exotic[
-                [
-                    "symbol",
-                    "ranges",
-                    "mRNA_nb",
-                    "OK_bronze",
-                    "OK_silver",
-                    "OK_gold",
-                    "OK",
-                    "Max",
-                    "pext_max",
-                    "mean_proportion",
-                ]
-            ],
-            variants,
-            on="ranges",
-        )
-        return exotic_clinvar
-
-    def load_gwas(self):
-        gwas_associations = pd.read_csv(self.gwas_files["associations"], sep="\t")
-        # gwas_studies = pd.read_csv(self.gwas_files['GWAS']['studies'], sep='\t')
-        gwas_efo = pd.read_csv(self.gwas_files["efo"], sep="\t")
-        gwas_efo_lite = gwas_efo[
-            ["EFO term", "EFO URI", "Parent term", "Parent URI"]
-        ].drop_duplicates()
-
-        # print(gwas_associations)
-        # print(gwas_efo)
-        # print(gwas_efo_lite)
-        gwas_return = pd.merge(
-            gwas_associations,
-            gwas_efo_lite,
-            left_on="MAPPED_TRAIT_URI",
-            right_on="EFO URI",
-        )
-        return gwas_return
-
-
 class QTL:
-    def __init__(self):
-
+    def __init__(self, type_qtl):
+        print("QTL")
         ## YAML FILES CONFIG
         yaml = load_config_file()
         self.exotic_files = yaml
 
         self.gstock = "/gstock/biolo_datasets/variation/benchmark/Databases/"
-        dict_qtl_files = self.files_qtl_gstock()
+        dict_qtl_files, dict_convert = self.files_qtl_gstock()
 
         #  for l in [dict_qtl_files["ieQTL_files_raw"], dict_qtl_files["isQTL_files_raw"]]:
         # pbar = tqdm(l)
@@ -3750,43 +3349,55 @@ class QTL:
         # self.process_qtl_grch37(file)
 
         merge_exotic_biomart = self.biomart_exotic()
-        merge_exotic_biomart["Gene_ranges"] = (
-            merge_exotic_biomart["start"].astype(str)
-            + "-"
-            + merge_exotic_biomart["end"].astype(str)
+        merge_exotic_biomart["Gene_ranges"] = merge_exotic_biomart["start"].astype(str) + "-" + merge_exotic_biomart["end"].astype(str)
+
+        # exotic_with_introns = self.retrieve_intron_refseq(merge_exotic_biomart)
+
+        # print(merge_exotic_biomart)
+
+        # self.mapping_qtl = self.init_mp_mapping_qtl_exotic(
+        # type_qtl="sqtlseeker",
+        # qtl_files_37 = dict_qtl_files["sQTL_seeker2_37"]
+        # t = "sQTLseeker"
+        # exotic_file=merge_exotic_biomart.drop_duplicates(subset=["Gene stable ID", "Gene name", "Gene_ranges"]),
+        # exotic_file="",
+        # condition="Gene",
+        # )
+        # print(dict_convert[type_qtl])
+        l = dict_qtl_files[dict_convert[type_qtl]]
+        # for intron_bool in [True, False]:
+        t = l[0].split("/")[-2].split("_")[-1]
+        concat_df_tissues = self.init_mp_merge_qtl_tissues(l, type_qtl=t)
+        print(concat_df_tissues)
+
+        # concat_df_tissues["POS_GRCh37"] = concat_df_tissues["POS_GRCh37"].astype(int)
+        print(t)
+        # print(concat_df_tissues)
+
+        # if intron_bool is True:
+        self.mapping_qtl = self.init_mp_mapping_qtl_exotic(
+            type_qtl=t,
+            qtl_files_37=l,
+            exotic_file=merge_exotic_biomart.drop_duplicates(subset=["Gene stable ID", "Gene name", "Gene_ranges"]),
+            condition="Gene",
         )
-        exotic_with_introns = self.retrieve_intron_refseq(merge_exotic_biomart)
+        print(self.mapping_qtl)
+        # else:
+        #     self.init_mp_mapping_qtl_exotic(
+        #         type_qtl=t,
+        #         qtl_files_37=l,
+        #         exotic_file=merge_exotic_biomart,
+        #         intron=intron_bool,
+        #     )
 
-        for l in [dict_qtl_files["sQTL_files_37"]]:
-            # for intron_bool in [True, False]:
-            t = l[0].split("/")[-2].split("_")[-1]
-            concat_df_tissues = self.init_mp_merge_qtl_tissues(l, type_qtl=t)
+        # self.init_mp_mapping_qtl_exotic(
+        #     type_qtl=t,
+        #     qtl_files_37=l,
+        #     exotic_file=exotic_with_introns,
+        #     intron=True,
+        # )
 
-            # if intron_bool is True:
-            self.init_mp_mapping_qtl_exotic(
-                type_qtl=t,
-                qtl_files_37=l,
-                exotic_file=merge_exotic_biomart.drop_duplicates(
-                    subset=["Gene stable ID", "Gene name", "Gene_ranges"]
-                ),
-                condition="Gene",
-            )
-            # else:
-            #     self.init_mp_mapping_qtl_exotic(
-            #         type_qtl=t,
-            #         qtl_files_37=l,
-            #         exotic_file=merge_exotic_biomart,
-            #         intron=intron_bool,
-            #     )
-
-            # self.init_mp_mapping_qtl_exotic(
-            #     type_qtl=t,
-            #     qtl_files_37=l,
-            #     exotic_file=exotic_with_introns,
-            #     intron=True,
-            # )
-
-        exit()
+        # exit()
 
         # print(len(set(exotic_genes).intersection(set(qtl_genes))))
         # print(len(exotic_genes))
@@ -3803,52 +3414,46 @@ class QTL:
             self.gstock + "GTEX/V8/GTEx_Analysis_v8_eQTL/" + e
             for e in os.listdir(self.gstock + "GTEX/V8/GTEx_Analysis_v8_eQTL/")
             if "signif" in e
+            if "3" not in e
         ]
         sqtl_files_raw = [
             self.gstock + "GTEX/V8/GTEx_Analysis_v8_sQTL/" + e
             for e in os.listdir(self.gstock + "GTEX/V8/GTEx_Analysis_v8_sQTL/")
             if "signif" in e
+            if "3" not in e
         ]
 
         ieqtl_files_raw = [
             self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_ieQTL/" + e
-            for e in os.listdir(
-                self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_ieQTL/"
-            )
+            for e in os.listdir(self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_ieQTL/")
+            if "3" not in e
         ]
         isqtl_files_raw = [
             self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_isQTL/" + e
-            for e in os.listdir(
-                self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_isQTL/"
-            )
+            for e in os.listdir(self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_isQTL/")
+            if "3" not in e
         ]
 
         eqtl_files_37 = [
-            self.gstock + "GTEX/V8/GTEx_Analysis_v8_eQTL/" + e
-            for e in os.listdir(self.gstock + "GTEX/V8/GTEx_Analysis_v8_eQTL/")
-            if "final" in e
+            self.gstock + "GTEX/V8/GTEx_Analysis_v8_eQTL/" + e for e in os.listdir(self.gstock + "GTEX/V8/GTEx_Analysis_v8_eQTL/") if "final" in e
         ]
 
         sqtl_files_37 = [
-            self.gstock + "GTEX/V8/GTEx_Analysis_v8_sQTL/" + e
-            for e in os.listdir(self.gstock + "GTEX/V8/GTEx_Analysis_v8_sQTL/")
-            if "final" in e
+            self.gstock + "GTEX/V8/GTEx_Analysis_v8_sQTL/" + e for e in os.listdir(self.gstock + "GTEX/V8/GTEx_Analysis_v8_sQTL/") if "final" in e
         ]
 
         ieqtl_files_37 = [
             self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_ieQTL/" + e
-            for e in os.listdir(
-                self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_ieQTL/"
-            )
+            for e in os.listdir(self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_ieQTL/")
             if "final" in e
         ]
         isqtl_files_37 = [
             self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_isQTL/" + e
-            for e in os.listdir(
-                self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_isQTL/"
-            )
+            for e in os.listdir(self.gstock + "GTEX/V8/Cell_type/GTEx_Analysis_v8_isQTL/")
             if "final" in e
         ]
+
+        sqtl_seeker2_37 = self.exotic_files["QTL"]["sqlseeker2"]["GTEx_V8_RSEM"] + "Merge_sQTL.parquet"
 
         d = {
             "eQTL_files_raw": eqtl_files_raw,
@@ -3859,106 +3464,144 @@ class QTL:
             "isQTL_files_raw": isqtl_files_raw,
             "ieQTL_files_37": ieqtl_files_37,
             "isQTL_files_37": isqtl_files_37,
+            "sQTL_seeker2_37": sqtl_seeker2_37,
         }
-        return d
 
-    def init_mp_mapping_qtl_exotic(
-        self, type_qtl, qtl_files_37, exotic_file, condition="Exon"
-    ):
+        d_convert = {
+            "eQTL": "eQTL_files_raw",
+            "sQTL": "sQTL_files_raw",
+            "ieQTL": "ieQTL_files_raw",
+            "isQTL": "isQTL_files_raw",
+            "sQTLseeker": "sQTL_seeker2_raw",
+        }
+
+        return d, d_convert
+
+    def init_mp_mapping_qtl_exotic(self, type_qtl, qtl_files_37, exotic_file, condition="Exon"):
         type_region = condition
+        print("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_38_{}_{}.parquet".format(type_qtl, type_region))
+        if os.path.isfile("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_38_{}_{}.parquet".format(type_qtl, type_region)) is False:
 
-        if (
-            os.path.isfile(
-                "/gstock/EXOTIC/data/QTL/EXOTIC_{}_{}.parquet".format(
-                    type_qtl, type_region
-                )
-            )
-            is False
-        ):
-
-            concat_df_tissues = self.init_mp_merge_qtl_tissues(
-                qtl_files_37, type_qtl=type_qtl
-            )
-
-            concat_df_tissues = concat_df_tissues.drop_duplicates()
+            if "seeker" not in type_qtl:
+                concat_df_tissues = self.init_mp_merge_qtl_tissues(qtl_files_37, type_qtl=type_qtl)
+                # concat_df_tissues = concat_df_tissues.drop_duplicates()
             if type_qtl == "sQTL":
-                concat_df_tissues["gene_id"] = concat_df_tissues["phenotype_id"].apply(
-                    lambda r: r.split(":")[-1].split(".")[0]
-                )
+                concat_df_tissues["gene_id"] = concat_df_tissues["phenotype_id"].apply(lambda r: r.split(":")[-1].split(".")[0])
 
-            concat_df_tissues["gene_id"] = concat_df_tissues["gene_id"].apply(
-                lambda r: r.split(".")[0]
-            )
+            elif "seeker" in type_qtl:
+                print(qtl_files_37)
+                concat_df_tissues = pd.read_parquet(qtl_files_37)
+            concat_df_tissues["POS_GRCh38"] = concat_df_tissues["POS_GRCh38"].astype(int)
+            concat_df_tissues = concat_df_tissues.rename({"geneId": "gene_id"}, axis=1)
+            concat_df_tissues["gene_id"] = concat_df_tissues["gene_id"].apply(lambda r: r.split(".")[0])
 
             # print(concat_df_tissues)
             # exit()
             exotic_file = exotic_file.drop_duplicates(subset=["symbol", "MAP"])
 
             exotic_genes = list(exotic_file["Gene stable ID"].unique())
-            qtl_genes = [
-                e.split(".")[0] for e in list(concat_df_tissues.gene_id.unique())
-            ]
+            qtl_genes = [e.split(".")[0] for e in list(concat_df_tissues.gene_id.unique())]
             common_genes = list(sorted(set(exotic_genes).intersection(set(qtl_genes))))
+            print(exotic_genes[:10])
+            print(len(exotic_genes))
+            print(qtl_genes[:10])
+            print(len(qtl_genes))
+            print(common_genes[:10])
+            print(len(common_genes))
+
             l = list()
             for i, gene in tqdm(enumerate(common_genes)):
-                self.mp_mapping_qtl_exotic(
-                    gene, exotic_file, concat_df_tissues, l, condition
-                )
+                # if i == 10:
+                # break
+                self.mp_mapping_qtl_exotic(gene, exotic_file, concat_df_tissues, l, condition)
 
             concat_df = pd.concat(l)
             print(concat_df)
+            if "seeker" in type_qtl:
+                concat_df = concat_df.drop_duplicates(subset=["Tissue", "gene_id", "variant_id", "tr.first", "tr.second"])
+            else:
+                concat_df = concat_df.drop_duplicates(subset=["Tissue", "variant_id", "gene_id"])
+            # concat_df["POS_GRCh38"] = concat_df["ID_GRCh38"].apply(lambda r: r.split("_")[1])
+            concat_df.to_parquet("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_38_{}_{}.parquet".format(type_qtl, type_region), index=False)
+            # concat_df = pd.read_parquet("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_{}_{}.parquet".format(type_qtl, type_region))
+            # # concat_df.to_excel("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_{}_{}.xlsx".format(type_qtl, type_region), index=False)
+            print(concat_df)
+            print(concat_df.gene_id.nunique())
+            print(condition)
+            # print(list(concat_df.columns))
+            if condition == "Exon":
+                print(concat_df.ranges.nunique())
+            elif condition == "Intron":
+                print(concat_df.Introns_ranges.nunique())
+            elif condition == "Gene":
+                print(concat_df.Gene_ranges.nunique())
+            print(concat_df.variant_id.nunique())
 
-            concat_df.to_parquet(
-                "/gstock/EXOTIC/data/QTL/EXOTIC_{}_{}.parquet".format(
-                    type_qtl, type_region
-                )
+            # concat_df["OK"] = concat_df["OK"].apply(lambda r: r.split(","))
+
+            concat_df["Check_tissue_QTL_EXOTIC"] = concat_df.apply(
+                lambda r: True if r["Tissue"] in r["OK"] else False,
+                axis=1,
             )
+            test = concat_df.loc[concat_df["Check_tissue_QTL_EXOTIC"] == True]
+            print(test)
+            print(test.gene_id.nunique())
+            if condition == "Exon":
+                print(concat_df.ranges.nunique())
+            elif condition == "Intron":
+                print(test.Introns_ranges.nunique())
+            elif condition == "Gene":
+                print(test.Gene_ranges.nunique())
+            print(test.variant_id.nunique())
+            test.to_excel(
+                "/gstock/EXOTIC/data/QTL/EXOTIC_corrected_38_{}_{}_filtered.xlsx".format(type_qtl, type_region),
+                index=False,
+            )
+            # concat_df.to_excel("/gstock/EXOTIC/data/QTL/EXOTIC_{}_{}.xlsx".format(type_qtl, type_region), index=False)
         else:
-            concat_df = pd.read_parquet(
-                "/gstock/EXOTIC/data/QTL/EXOTIC_{}_{}.parquet".format(
-                    type_qtl, type_region
-                )
-            )
+            test = pd.read_excel("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_{}_{}_filtered.xlsx".format(type_qtl, type_region))
+            # concat_df = pd.read_parquet("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_{}_{}.parquet".format(type_qtl, type_region))
+            # # concat_df.to_excel("/gstock/EXOTIC/data/QTL/EXOTIC_corrected_{}_{}.xlsx".format(type_qtl, type_region), index=False)
+            # print(concat_df)
+            # print(concat_df.gene_id.nunique())
+            # print(condition)
+            # print(list(concat_df.columns))
+            # if condition == "Exon":
+            #     print(concat_df.ranges.nunique())
+            # elif condition == "Intron":
+            #     print(concat_df.Introns_ranges.nunique())
+            # elif condition == "Gene":
+            #     print(concat_df.Gene_ranges.nunique())
+            # print(concat_df.variant_id.nunique())
 
-        print(concat_df)
-        print(concat_df.gene_id.nunique())
-        print(condition)
-        print(list(concat_df.columns))
-        if condition == "Exon":
-            print(concat_df.ranges.nunique())
-        elif condition == "Intron":
-            print(concat_df.Introns_ranges.nunique())
-        elif condition == "Gene":
-            print(concat_df.Gene_ranges.nunique())
-        print(concat_df.variant_id.nunique())
+            # concat_df["OK"] = concat_df["OK"].apply(lambda r: r.split(","))
 
-        concat_df["OK"] = concat_df["OK"].apply(lambda r: r.split(","))
+            # concat_df["Check_tissue_QTL_EXOTIC"] = concat_df.apply(
+            #     lambda r: True if r["Tissue"] in r["OK"] else False,
+            #     axis=1,
+            # )
+            # test = concat_df.loc[concat_df["Check_tissue_QTL_EXOTIC"] == True]
+            # print(test)
+            # print(test.gene_id.nunique())
+            # if condition == "Exon":
+            #     print(concat_df.ranges.nunique())
+            # elif condition == "Intron":
+            #     print(test.Introns_ranges.nunique())
+            # elif condition == "Gene":
+            #     print(test.Gene_ranges.nunique())
+            # print(test.variant_id.nunique())
+            # test.to_excel(
+            #     "/gstock/EXOTIC/data/QTL/EXOTIC_corrected_{}_{}_filtered.xlsx".format(type_qtl, type_region),
+            #     index=False,
+            # )
+            # concat_df = concat_df.drop_duplicates(subset=["Tissue", "best.snp", "gene_id", "variant_id", "tr.first", "tr.second"]).reset_index(drop=True)
+            # concat_df.to_parquet("/gstock/EXOTIC/data/QTL/EXOTIC_{}_{}2.parquet".format(type_qtl, type_region))
+            # test = pd.read_excel("/gstock/EXOTIC/data/QTL/EXOTIC_{}_{}.xlsx".format(type_qtl, type_region), engine="openpyxl")
 
-        concat_df["Check_tissue_QTL_EXOTIC"] = concat_df.apply(
-            lambda r: True if r["Tissue"] in r["OK"] else False,
-            axis=1,
-        )
-        test = concat_df.loc[concat_df["Check_tissue_QTL_EXOTIC"] == True]
-        print(test)
-        print(test.gene_id.nunique())
-        if condition == "Exon":
-            print(concat_df.ranges.nunique())
-        elif condition == "Intron":
-            print(test.Introns_ranges.nunique())
-        elif condition == "Gene":
-            print(test.Gene_ranges.nunique())
-        print(test.variant_id.nunique())
-        test.to_excel(
-            "/gstock/EXOTIC/data/QTL/EXOTIC_{}_{}.xlsx".format(type_qtl, type_region),
-            index=False,
-        )
+        return test
 
-    def mp_mapping_qtl_exotic(
-        self, gene, merge_exotic_biomart, concat_df_tissues, l, condition
-    ):
-        exotic_gene = merge_exotic_biomart.loc[
-            merge_exotic_biomart["Gene stable ID"] == gene
-        ]
+    def mp_mapping_qtl_exotic(self, gene, merge_exotic_biomart, concat_df_tissues, l, condition):
+        exotic_gene = merge_exotic_biomart.loc[merge_exotic_biomart["Gene stable ID"] == gene]
         qtl_gene = concat_df_tissues.loc[concat_df_tissues["gene_id"] == gene]
         mapping_gene = self.map_qtl_to_exotic(exotic_gene, qtl_gene, condition)
         if mapping_gene.empty is False:
@@ -3973,9 +3616,8 @@ class QTL:
                 r = row["Introns_ranges"]
             elif condition == "Gene":
                 r = row["Gene_ranges"]
-            m = qtl_gene["POS_GRCh37"].between(
-                int(r.split("-")[0]) - 5000, int(r.split("-")[1]) + 5000, inclusive=True
-            )
+            m = qtl_gene["POS_GRCh38"].between(int(r.split("-")[0]) - 5000, int(r.split("-")[1]) + 5000, inclusive=True)
+
             if True in m.values.tolist():
 
                 variants_between = qtl_gene.loc[m.where(m == True).dropna().index]
@@ -4035,10 +3677,7 @@ class QTL:
 
     def retrieve_intron_refseq(self, merge_exotic_biomart):
 
-        if (
-            os.path.isfile("/gstock/EXOTIC/data/EXOTIC/EXOTIC_with_introns.parquet")
-            is False
-        ):
+        if os.path.isfile("/gstock/EXOTIC/data/EXOTIC/EXOTIC_with_introns.parquet") is False:
 
             refseq = pd.read_csv(
                 self.exotic_files["CCRS_analysis"]["RefSeq_transformed"],
@@ -4052,51 +3691,31 @@ class QTL:
                 # if j == 50:
                 # break
                 refseq_gene = refseq.loc[refseq["Gene"] == gene].reset_index(drop=True)
-                exotic_gene = merge_exotic_biomart.loc[
-                    merge_exotic_biomart["Gene name"] == gene
-                ]
+                exotic_gene = merge_exotic_biomart.loc[merge_exotic_biomart["Gene name"] == gene]
                 refseq_gene = self.compute_intron(refseq_gene)
 
-                exotic_in_refseq = refseq_gene.loc[
-                    refseq_gene["ranges"].isin(exotic_gene["Exon"].values.tolist())
-                ]
+                exotic_in_refseq = refseq_gene.loc[refseq_gene["ranges"].isin(exotic_gene["Exon"].values.tolist())]
                 # print(exotic_in_refseq)
                 # print(refseq_gene)
                 # intron_to_check_exotic = list()
                 for exon_index in exotic_in_refseq.index:
                     if exon_index == 0:
-                        intron_list_extended = [
-                            refseq_gene.loc[exon_index + 1]["Intron"]
+                        intron_list_extended = [refseq_gene.loc[exon_index + 1]["Intron"]]
+                        d[gene + "_" + str(exotic_in_refseq.loc[exon_index]["Start"]) + "-" + str(exotic_in_refseq.loc[exon_index]["End"])] = [
+                            e for e in list(set(intron_list_extended)) if e != ""
                         ]
-                        d[
-                            gene
-                            + "_"
-                            + str(exotic_in_refseq.loc[exon_index]["Start"])
-                            + "-"
-                            + str(exotic_in_refseq.loc[exon_index]["End"])
-                        ] = [e for e in list(set(intron_list_extended)) if e != ""]
 
                     elif exon_index > 0 and exon_index < len(refseq_gene.index):
-                        intron_list_extended = refseq_gene.loc[
-                            exon_index : exon_index + 1
-                        ]["Intron"].values.tolist()
-                        d[
-                            gene
-                            + "_"
-                            + str(exotic_in_refseq.loc[exon_index]["Start"])
-                            + "-"
-                            + str(exotic_in_refseq.loc[exon_index]["End"])
-                        ] = [e for e in list(set(intron_list_extended)) if e != ""]
+                        intron_list_extended = refseq_gene.loc[exon_index : exon_index + 1]["Intron"].values.tolist()
+                        d[gene + "_" + str(exotic_in_refseq.loc[exon_index]["Start"]) + "-" + str(exotic_in_refseq.loc[exon_index]["End"])] = [
+                            e for e in list(set(intron_list_extended)) if e != ""
+                        ]
 
                     elif exon_index == len(refseq_gene.index):
                         intron_list_extended = [refseq_gene.loc[exon_index]["Intron"]]
-                        d[
-                            gene
-                            + "_"
-                            + str(exotic_in_refseq.loc[exon_index]["Start"])
-                            + "-"
-                            + str(exotic_in_refseq.loc[exon_index]["End"])
-                        ] = [e for e in list(set(intron_list_extended)) if e != ""]
+                        d[gene + "_" + str(exotic_in_refseq.loc[exon_index]["Start"]) + "-" + str(exotic_in_refseq.loc[exon_index]["End"])] = [
+                            e for e in list(set(intron_list_extended)) if e != ""
+                        ]
 
                 # introns_full_exotic = [
                 # e for e in sorted(list(set(intron_to_check_exotic))) if e != ""
@@ -4104,101 +3723,117 @@ class QTL:
                 # d[list(exotic_gene["Gene name"].unique())[0]] = introns_full_exotic
 
             merge_exotic_biomart["Introns_ranges"] = merge_exotic_biomart["MAP"].map(d)
-            exotic_with_introns = merge_exotic_biomart.loc[
-                merge_exotic_biomart["Introns_ranges"].str.len() > 0
-            ]
+            exotic_with_introns = merge_exotic_biomart.loc[merge_exotic_biomart["Introns_ranges"].str.len() > 0]
 
             exotic_with_introns = exotic_with_introns.explode("Introns_ranges")
-            exotic_with_introns.to_parquet(
-                "/gstock/EXOTIC/data/EXOTIC/EXOTIC_with_introns.parquet"
-            )
+            exotic_with_introns.to_parquet("/gstock/EXOTIC/data/EXOTIC/EXOTIC_with_introns.parquet")
         else:
-            exotic_with_introns = pd.read_parquet(
-                "/gstock/EXOTIC/data/EXOTIC/EXOTIC_with_introns.parquet"
-            )
+            exotic_with_introns = pd.read_parquet("/gstock/EXOTIC/data/EXOTIC/EXOTIC_with_introns.parquet")
         return exotic_with_introns
 
     def biomart_exotic(self):
-        if (
-            os.path.isfile("/gstock/EXOTIC/data/EXOTIC/EXOTIC_biomart_for_QTL.parquet")
-            is False
-        ):
+        from liftover import ChainFile
+
+        converter = ChainFile("/gstock/biolo_datasets/variation/benchmark/Databases/CrossMap/GRCh38_to_GRCh37.chain.gz", "GRCh38", "GRCh37")
+
+        def apply_liftover(r, name):
+            # print(r)
+            try:
+                output = converter[r["CHROM"]][int(r[name])]
+                # print(output)
+                converted_pos = output[0][1]
+            except KeyError:
+                converted_pos = np.nan
+            except IndexError:
+                converted_pos = np.nan
+            return converted_pos
+
+        if os.path.isfile("/gstock/EXOTIC/data/EXOTIC/EXOTIC_corrected_biomart_for_QTL_corrected.parquet") is False:
+            print("BIOMART & EXOTIC")
+
             exotic_ok = pd.read_parquet(self.exotic_files["EXOTIC"]["exotic_ok_path"])
             exotic_ok = exotic_ok.loc[exotic_ok["OK"].str.len() > 0]
 
             exotic_ok["Exon"] = exotic_ok["MAP"].apply(lambda r: r.split("_")[1])
 
-            exotic_ok["Start"] = exotic_ok["Exon"].apply(lambda r: r.split("-")[0])
-            exotic_ok["Start"] = exotic_ok["Start"].astype(int)
+            exotic_ok["Exon_start_GRCh37"] = exotic_ok["Exon"].apply(lambda r: r.split("-")[0])
+            exotic_ok["Exon_start_GRCh37"] = exotic_ok["Exon_start_GRCh37"].astype(int)
 
-            exotic_ok["End"] = exotic_ok["Exon"].apply(lambda r: r.split("-")[1])
-            exotic_ok["End"] = exotic_ok["End"].astype(int)
+            exotic_ok["Exon_end_GRCh37"] = exotic_ok["Exon"].apply(lambda r: r.split("-")[1])
+            exotic_ok["Exon_end_GRCh37"] = exotic_ok["Exon_end_GRCh37"].astype(int)
 
-            print(exotic_ok)
+            # exotic_ok = exotic_ok.loc[exotic_ok["symbol"] == "A2M"]
 
             biomart = pd.read_csv(
-                self.exotic_files["EXOTIC"]["biomart_ensembl_hgnc"],
+                self.exotic_files["EXOTIC"]["biomart_ensembl_hgnc_refseq"],
                 sep="\t",
                 compression="gzip",
             )
-
-            biomart["Strand"] = biomart["Strand"].replace({1: "+", -1: "-"})
-            biomart = biomart.rename(
-                {
-                    "Strand": "strand",
-                    "Chromosome/scaffold name": "chrom",
-                    "Gene start (bp)": "start",
-                    "Gene end (bp)": "end",
-                },
-                axis=1,
+            biomart = biomart.loc[
+                biomart["Gene type"] == "protein_coding",
+                ["Gene stable ID", "Chromosome/scaffold name", "Gene start (bp)", "Gene end (bp)", "Gene name", "HGNC ID"],
+            ].drop_duplicates()
+            biomart.columns = ["Gene_ID", "CHROM", "Gene_start_GRCh38", "Gene_end_GRCh38", "Gene_name", "HGNC_ID"]
+            print(biomart)
+            merge_biomart_exotic = pd.merge(exotic_ok, biomart, left_on="symbol", right_on="Gene_name")
+            print(merge_biomart_exotic[["CHROM", "Exon_start_GRCh37", "Exon_end_GRCh37"]])
+            merge_biomart_exotic["Gene_start_GRCh37"] = merge_biomart_exotic[["CHROM", "Gene_start_GRCh38"]].progress_apply(
+                lambda r: apply_liftover(r, "Gene_start_GRCh38"), axis=1
             )
-            biomart["start"] = biomart["start"].astype(int)
-            biomart["end"] = biomart["end"].astype(int)
-
-            biomart_to_convert = biomart[
-                [
-                    "chrom",
-                    "start",
-                    "end",
-                    "strand",
-                    "Gene stable ID",
-                    "Gene name",
-                ]
-            ]
-
-            biomart_to_convert = biomart_to_convert.sort_values(by=["chrom", "start"])
-
-            biomart_to_convert.to_csv(
-                self.exotic_files["EXOTIC"]["biomart_ensembl_hgnc"].replace(
-                    ".txt.gz", "_to_convert.bed3"
-                ),
-                # compression="gzip",
-                sep="\t",
-                index=False,
-                # header=False,
+            merge_biomart_exotic["Gene_end_GRCh37"] = merge_biomart_exotic[["CHROM", "Gene_end_GRCh38"]].progress_apply(
+                lambda r: apply_liftover(r, "Gene_end_GRCh38"), axis=1
             )
+            merge_biomart_exotic['CHROM'] = merge_biomart_exotic['CHROM'].astype(str)
+            print(merge_biomart_exotic)
+            print(merge_biomart_exotic.loc[merge_biomart_exotic["Gene_end_GRCh37"].isna() == True])
 
-            biomart_grch37 = pd.read_csv(
-                self.exotic_files["EXOTIC"]["biomart_ensembl_hgnc"].replace(
-                    ".txt.gz", "_GRCh37.bed3"
-                ),
-                sep="\t",
-            )
-            biomart_grch37.columns = biomart_to_convert.columns
+            # biomart["Strand"] = biomart["Strand"].replace({1: "+", -1: "-"})
+            # biomart = biomart.rename(
+            #     {
+            #         "Strand": "strand",
+            #         "Chromosome/scaffold name": "chrom",
+            #         "Gene start (bp)": "start",
+            #         "Gene end (bp)": "end",
+            #     },
+            #     axis=1,
+            # )
+            # biomart["start"] = biomart["start"].astype(int)
+            # biomart["end"] = biomart["end"].astype(int)
 
-            merge_exotic_biomart = pd.merge(
-                biomart_grch37, exotic_ok, left_on="Gene name", right_on="symbol"
-            )
+            # biomart_to_convert = biomart[
+            #     [
+            #         "chrom",
+            #         "start",
+            #         "end",
+            #         "strand",
+            #         "Gene stable ID",
+            #         "Gene name",
+            #     ]
+            # ]
 
-            merge_exotic_biomart.to_parquet(
-                "/gstock/EXOTIC/data/EXOTIC/EXOTIC_biomart_for_QTL.parquet"
-            )
+            # biomart_to_convert = biomart_to_convert.sort_values(by=["chrom", "start"])
+
+            # biomart_to_convert.to_csv(
+            #     self.exotic_files["EXOTIC"]["biomart_ensembl_hgnc"].replace(".txt.gz", "_to_convert.bed3"),
+            #     # compression="gzip",
+            #     sep="\t",
+            #     index=False,
+            #     # header=False,
+            # )
+
+            # biomart_grch37 = pd.read_csv(
+            #     self.exotic_files["EXOTIC"]["biomart_ensembl_hgnc"].replace(".txt.gz", "_GRCh37.bed3"),
+            #     sep="\t",
+            # )
+            # biomart_grch37.columns = biomart_to_convert.columns
+
+            # merge_exotic_biomart = pd.merge(biomart_grch37, exotic_ok, left_on="Gene name", right_on="symbol")
+            merge_biomart_exotic.to_parquet("/gstock/EXOTIC/data/EXOTIC/EXOTIC_corrected_biomart_for_QTL_corrected.parquet")
+            exit()
         else:
-            merge_exotic_biomart = pd.read_parquet(
-                "/gstock/EXOTIC/data/EXOTIC/EXOTIC_biomart_for_QTL.parquet"
-            )
+            merge_biomart_exotic = pd.read_parquet("/gstock/EXOTIC/data/EXOTIC/EXOTIC_corrected_biomart_for_QTL_corrected.parquet")
 
-        return merge_exotic_biomart
+        return merge_biomart_exotic
 
     def handle_duplicated_genes(self, biomart, merge_exotic_biomart):
         def check_bounds(r):
@@ -4210,47 +3845,28 @@ class QTL:
         merge_exotic_biomart_genes = list(merge_exotic_biomart.symbol.unique())
 
         duplicated_genes = biomart.loc[
-            (biomart["Gene name"].isin(merge_exotic_biomart_genes))
-            & (biomart["Gene name"].duplicated() == True),
+            (biomart["Gene name"].isin(merge_exotic_biomart_genes)) & (biomart["Gene name"].duplicated() == True),
         ]
         print(duplicated_genes)
         exit()
 
         merge_exotic_biomart_duplicated = merge_exotic_biomart.loc[
-            merge_exotic_biomart["symbol"].isin(
-                duplicated_genes["Gene name"].unique().tolist()
-            )
+            merge_exotic_biomart["symbol"].isin(duplicated_genes["Gene name"].unique().tolist())
         ]
 
-        merge_exotic_biomart_duplicated[
-            "Check_exon_bounds"
-        ] = merge_exotic_biomart_duplicated.apply(check_bounds, axis=1)
+        merge_exotic_biomart_duplicated["Check_exon_bounds"] = merge_exotic_biomart_duplicated.apply(check_bounds, axis=1)
         print(merge_exotic_biomart_duplicated)
-        print(
-            merge_exotic_biomart_duplicated.loc[
-                merge_exotic_biomart_duplicated["Check_exon_bounds"] == False
-            ]
-        )
+        print(merge_exotic_biomart_duplicated.loc[merge_exotic_biomart_duplicated["Check_exon_bounds"] == False])
 
-        print(
-            merge_exotic_biomart_duplicated.loc[
-                merge_exotic_biomart_duplicated["Check_exon_bounds"] == False, "symbol"
-            ].nunique()
-        )
-        print(
-            merge_exotic_biomart_duplicated.loc[
-                merge_exotic_biomart_duplicated["Gene name"] == "MCTS1"
-            ]
-        )
+        print(merge_exotic_biomart_duplicated.loc[merge_exotic_biomart_duplicated["Check_exon_bounds"] == False, "symbol"].nunique())
+        print(merge_exotic_biomart_duplicated.loc[merge_exotic_biomart_duplicated["Gene name"] == "MCTS1"])
 
         print(biomart.loc[biomart["Gene name"] == "MCTS1"])
         exit()
 
         for gene in duplicated_exotic.symbol.unique():
             print(gene)
-            duplicated_exotic_gene = duplicated_exotic.loc[
-                duplicated_exotic["symbol"] == gene
-            ]
+            duplicated_exotic_gene = duplicated_exotic.loc[duplicated_exotic["symbol"] == gene]
             duplicated_biomart_gene = biomart.loc[biomart["Gene name"] == gene]
             print(duplicated_exotic_gene)
             print(duplicated_biomart_gene)
@@ -4269,25 +3885,27 @@ class QTL:
             o = (
                 self.gstock
                 + "GTEX/V8/Cell_type/GTEx_Analysis_v8_{}/".format(type_qtl)
-                + "Merge_tissues_{}_signif_variant_GRCh37.parquet".format(type_qtl)
+                + "Merge_tissues_{}_signif_variant_GRCh38.parquet".format(type_qtl)
             )
         else:
-            o = (
-                self.gstock
-                + "GTEX/V8/GTEx_Analysis_v8_{}/".format(type_qtl)
-                + "Merge_tissues_{}_signif_variant_GRCh37.parquet".format(type_qtl)
-            )
+            o = self.gstock + "GTEX/V8/GTEx_Analysis_v8_{}/".format(type_qtl) + "Merge_tissues_{}_signif_variant_GRCh38.parquet".format(type_qtl)
         if os.path.isfile(o) is False:
             m = multiprocessing.Manager()
             l = m.list()
-            parmap.starmap(
-                self.mp_merge_qtl_tissues, list(zip(files_37)), l, pm_pbar=True
-            )
+            parmap.starmap(self.mp_merge_qtl_tissues, list(zip(files_37)), l, pm_pbar=True)
 
             concat_tissues_df = pd.concat(l)
 
-            concat_tissues_df["CHROM"] = concat_tissues_df["CHROM"].astype(str)
+            concat_tissues_df["variant_id"] = concat_tissues_df["variant_id"].str.replace("_b38", "")
+            try:
+                concat_tissues_df = concat_tissues_df.drop_duplicates(subset=["Tissue", "gene_id", "variant_id"])
+            except:
+                concat_tissues_df = concat_tissues_df.drop_duplicates(subset=["Tissue", "phenotype_id", "variant_id"])
 
+            concat_tissues_df[["CHROM", "POS_GRCh38", "REF", "ALT"]] = concat_tissues_df["variant_id"].str.split("_", expand=True)
+            concat_tissues_df["CHROM"] = concat_tissues_df["CHROM"].str.replace("chr", "")
+            concat_tissues_df["POS_GRCh38"] = concat_tissues_df["POS_GRCh38"].astype(int)
+            concat_tissues_df["CHROM"] = concat_tissues_df["CHROM"].astype(str)
             concat_tissues_df.to_parquet(o)
         else:
             concat_tissues_df = pd.read_parquet(o)
@@ -4301,7 +3919,8 @@ class QTL:
             # nrows=100000,
             low_memory=False,
         )
-        df = df.drop(["POS_GRCh37.1"], axis=1)
+        if "POS_GRCh37" in df.columns:
+            df = df.drop(["POS_GRCh37.1"], axis=1)
         df["Tissue"] = file.split(".")[0].split("/")[-1]
         df["Cell_type"] = file.split(".")[1].split("/")[-1]
         l.append(df)
@@ -4344,9 +3963,7 @@ class QTL:
         for col in cols:
             df[col] = col + "=" + df[col].astype(str)
 
-        df["INFO"] = df[cols].apply(
-            lambda row: ";".join(row.values.astype(str)), axis=1
-        )
+        df["INFO"] = df[cols].apply(lambda row: ";".join(row.values.astype(str)), axis=1)
 
         df = df.rename({"POS_GRCh37": "POS", "CHROM": "#CHROM"}, axis=1)
 
@@ -4543,14 +4160,146 @@ class QTL:
         # exit()
 
 
+class GWAS:
+    def __init__(self, qtl, type_qtl):
+        print("GWAS")
+        # from liftover import ChainFile
+        # self.converter = ChainFile("/gstock/biolo_datasets/variation/benchmark/Databases/CrossMap/GRCh38_to_GRCh37.chain.gz", "GRCh38", "GRCh37")
+        yaml = load_config_file()
+        self.exotic_files = yaml["EXOTIC"]
+        self.gwas_files = yaml["GWAS"]
+        self.qtl = qtl
+        self.gwas = self.load_gwas()
+        self.modin_mapping_qtl_to_gwas()
+        # variants = self.load_variants()
+        # variants = self.filter_variants_EXOTIC(variants)
+        # self.compare_variants_gwas(gwas, variants)
+
+    def modin_mapping_qtl_to_gwas(self):
+        self.qtl["CHROM"] = self.qtl["CHROM"].astype(str)
+        self.qtl["POS_GRCh38"] = self.qtl["POS_GRCh38"].astype(int)
+        self.gwas["CHR_ID"] = self.gwas["CHR_ID"].astype(str)
+        self.gwas["CHR_POS"] = self.gwas["CHR_POS"].astype(int)
+        print(self.qtl[["CHROM", "POS_GRCh38"]])
+        print(self.gwas[["CHR_ID", "CHR_POS"]])
+        # print(self.gwas.loc[self.gwas["CHR_POS"] == "nan", "Parent term"].value_counts())
+        merge = pd.merge(self.qtl, self.gwas, left_on=["CHROM", "POS_GRCh38"], right_on=["CHR_ID", "CHR_POS"])
+        print(merge)
+        merge.to_excel(
+            "/gstock/EXOTIC/data/GWAS/EXOTIC_corrected_{}_filtered_GWAS.xlsx".format(type_qtl),
+            index=False,
+        )
+
+    def compare_variants_gwas(self, gwas, variants, type_qtl):
+        pd.options.display.max_rows = 100
+        merge = pd.merge(gwas, variants, left_on="SNPS", right_on="rs")
+        print(merge)
+        merge["P-VALUE"] = merge["P-VALUE"].astype(float)
+        merge = merge.loc[merge["P-VALUE"] < 5 * 10e-8]
+        print(merge)
+        merge = merge.loc[merge["Parent term"] != "Other measurement"]
+        print(merge)
+        # merge = merge.loc[merge["Status"] == "Pathogenic"]
+        # print(merge)
+        merge = merge.loc[merge["OK_bronze"].str.len() > 0]
+        print(merge)
+        print(
+            merge[
+                [
+                    "DISEASE/TRAIT",
+                    "OK_bronze",
+                    "Max",
+                    "symbol",
+                    "ranges",
+                    "Ratio_num",
+                    "Real_Status",
+                    "VAR_ID",
+                    "P-VALUE",
+                ]
+            ].drop_duplicates(subset=["DISEASE/TRAIT", "ranges"])
+        )
+        print(merge.symbol.nunique())
+        print(merge.symbol.unique())
+        # test.to_excel(
+        #     "/gstock/EXOTIC/data/GWAS/EXOTIC_corrected_{}_filtered_GWAS.xlsx".format(type_qtl),
+        #     index=False,
+        # )
+
+    def load_variants(self):
+
+        variants = pd.read_parquet(self.exotic_files["clinvar_gnomad_pathogenic"])
+        variants.loc[variants["Status"] == "Pathogenic", "rs"] = "rs" + variants.loc[variants["Status"] == "Pathogenic", "rs"]
+        return variants
+
+    def filter_variants_EXOTIC(self, variants):
+        exotic = pd.read_parquet(self.exotic_files["exotic_ok_path"])
+        exotic = exotic.loc[exotic["OK"].str.len() > 0]
+        exotic["ranges"] = exotic["MAP"].apply(lambda r: r.split("_")[1])
+        exotic_clinvar = pd.merge(
+            exotic[
+                [
+                    "symbol",
+                    "ranges",
+                    "mRNA_nb",
+                    "OK_bronze",
+                    "OK_silver",
+                    "OK_gold",
+                    "OK",
+                    "Max",
+                    "pext_max",
+                    "mean_proportion",
+                ]
+            ],
+            variants,
+            on="ranges",
+        )
+        return exotic_clinvar
+
+    def load_gwas(self):
+        gwas_associations = pd.read_csv(self.gwas_files["associations"], sep="\t", low_memory=False)
+
+        gwas_associations["CHR_POS"] = gwas_associations["CHR_POS"].astype(str)
+        gwas_associations["CHR_POS"] = gwas_associations["CHR_POS"].apply(lambda r: r.split(" x "))
+        gwas_associations = gwas_associations.explode("CHR_POS")
+
+        gwas_associations["CHR_POS"] = gwas_associations["CHR_POS"].apply(lambda r: r.split(";"))
+
+        gwas_associations = gwas_associations.explode("CHR_POS")
+
+        gwas_associations = gwas_associations.loc[gwas_associations["CHR_POS"].isna() == False]
+
+        gwas_associations = gwas_associations.loc[~gwas_associations["CHR_POS"].isin(["nan", "NaN", ""])]
+
+        gwas_associations["CHR_POS"] = gwas_associations["CHR_POS"].astype(int)
+
+        # gwas_studies = pd.read_csv(self.gwas_files["GWAS"]["studies"], sep="\t")
+        gwas_efo = pd.read_csv(self.gwas_files["efo"], sep="\t", low_memory=False)
+        gwas_efo_lite = gwas_efo[["EFO term", "EFO URI", "Parent term", "Parent URI"]].drop_duplicates()
+
+        gwas_return = pd.merge(
+            gwas_associations,
+            gwas_efo_lite,
+            left_on="MAPPED_TRAIT_URI",
+            right_on="EFO URI",
+        )
+
+        gwas_return = gwas_return.dropna(subset=["CHR_POS"])
+        gwas_return = gwas_return.loc[~gwas_return["CHR_POS"].isin(["nan", "NaN", ""])]
+
+        return gwas_return
+
+
 if __name__ == "__main__":
 
     # GTEx_TPM = Compute_GTEx_profile()
     # SearchClass = EXOTIC(gtex_profile=GTEx_TPM.v_profile, cpus=20, omim_detailed=True)
     # SearchClass = EXOTIC(gtex_profile="", cpus=2, omim_detailed=True)
     # V = Variants_CCRS()
-    # G = GWAS()
-    Q = QTL()
+
+    # type_qtl = str(sys.argv[1])
+    type_qtl = "sQTL"
+    Q = QTL(type_qtl=type_qtl)
+    G = GWAS(Q.mapping_qtl, type_qtl=type_qtl)
 
 """ 
     pprint(SearchClass.concat_df.loc[SearchClass.concat_df['symbol'] == 'CACNB2'].to_dict())

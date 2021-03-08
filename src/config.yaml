@@ -11,9 +11,9 @@ EXOTIC:
   refseq_path: /gstock/EXOTIC/data/GENOMICS/RefSeq_processed.csv.gz
   pext_refseq_path: /gstock/EXOTIC/data/EXPRESSION/RefSeq_PEXT_2021.parquet
   # intermediate_file_lite_path: /home/weber/PycharmProjects/ExoCarto/data/clean/2_expression/RefSeq_PEXT_pct_lite.parquet
-  exotic_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_2021.parquet
-  exotic_ok_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_tissues_ok.parquet
-  exotic_gtex_comparison_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_tissues_gtex_comparison.parquet
+  exotic_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_2021_corrected.parquet
+  exotic_ok_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_tissues_ok_corrected.parquet
+  exotic_gtex_comparison_path: /gstock/EXOTIC/data/EXOTIC/EXOTIC_tissues_gtex_comparison_corrected.parquet
 
   # gtex_pext_exon_file_path: /home/weber/PycharmProjects/ExoCarto/data/clean/2_expression/RefSeq_PEXT_GTEx.parquet
   # omim_global: /home/weber/PycharmProjects/ExoCarto/data/clean/3_phenotypes/omim_genes_bodyparts.csv.gz
@@ -24,6 +24,8 @@ EXOTIC:
   clinvar_gnomad_pathogenic: /gstock/EXOTIC/data/VARIATIONS/ClinVar_gnomAD_all_2021.parquet
   biomart_ensembl_hgnc: /gstock/EXOTIC/data/OTHERS/biomart_hgnc_ensembl.txt.gz
   biomart_ensembl_hgnc_refseq: /gstock/EXOTIC/data/OTHERS/biomart_refseq_ensembl_hgnc.txt.gz
+  refseq_ccrs: /home/weber/PycharmProjects/ExoCarto/data/2_processed/CCRS_lite.parquet
+  phylocsf_path: /home/weber/PycharmProjects/ExoCarto/data/2_processed/phyloCSF.parquet
 ExtractDiseaseGenes:
   DISEASE_GENES_PATH: data/1_interim/disease_genes.pkl
   venn_clinvar_hgmd: visualization/Venn_diagram_pathogenic_genes_ClinVar_HGMD.png
@@ -49,17 +51,18 @@ QTL:
     GTEx_V7_RSEM: /gstock/biolo_datasets/QTL/sqlseeker-2/sQTLs.GTEx.V7.RSEM/
     GTEx_V7_leafcutter: /gstock/biolo_datasets/QTL/sqlseeker-2/sQTLs.GTEx.V7.LeafCutter/
 GWAS:
-  associations: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-catalog-associations_ontology-annotated.tsv
-  studies: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-catalog-studies_ontology-annotated.tsv
-  ancestry: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-catalog-ancestry.tsv
-  efo: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/gwas-efo-trait-mappings.tsv
+  associations: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/Latest/gwas-catalog-associations_ontology-annotated.tsv
+  studies: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/Latest/gwas-catalog-studies_ontology-annotated.tsv
+  ancestry: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/Latest/gwas-catalog-ancestry.tsv
+  efo: /gstock/biolo_datasets/GWAS/GWAS_catalog_FTP/Latest/gwas-efo-trait-mappings.tsv
 RefSeq:
   build_file: data/1_interim/RefSeq_GRCh37_complete_new.csv.gz
   df_transposed_gene_file: data/2_processed/GRCh37_RefSeq_lite_hgnc.csv.gz
   raw_file: data/0_external/GRCh37_latest_genomic.gff.gz
   refseq_corrected_by_gtex: /gstock/EXOTIC/data/GENOMICS/RefSeq_corrected_by_GTEx.csv.gz
+  refseq_corrected_lite: /gstock/EXOTIC/data/GENOMICS/RefSeq_corrected_by_GTEx_lite.parquet
   refseq_mrna_cds: /gstock/EXOTIC/data/GENOMICS/RefSeq_mRNA_CDS.parquet
-  refseq_old_new_comparison: /gstock/EXOTIC/data/GENOMICS/refseq_old_new.parquet
+  refseq_old_new_comparison: /gstock/EXOTIC/data/GENOMICS/refseq_old_new.csv.gz
 RefSeqStats:
   CORRECTED_DF_PATH: data/2_processed/GRCh37_corrected_refseq.csv.gz
   CORRECTED_DISEASE_PATH: data/2_processed/GRCh37_corrected_refseq_disease.csv.gz
