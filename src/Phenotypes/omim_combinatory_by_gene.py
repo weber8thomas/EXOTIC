@@ -266,10 +266,10 @@ def retrieve_clinical_synopsis_omim(gene, l):
                             l.append(new_dict)
 
 
-clinvar = pd.read_parquet("/home/weber/PycharmProjects/ExoCarto/data/clean/clinvar_20201010_lite_table.parquet")
-disease_genes = clinvar.loc[
-    (clinvar["Status"] == "Pathogenic") & (~clinvar["Real_Status"].str.contains("onflict")), "GENE"
-].unique()
+# clinvar = pd.read_parquet("/home/weber/PycharmProjects/ExoCarto/data/clean/clinvar_20201010_lite_table.parquet")
+# disease_genes = clinvar.loc[
+#     (clinvar["Status"] == "Pathogenic") & (~clinvar["Real_Status"].str.contains("onflict")), "GENE"
+# ].unique()
 
 full_human_genes = pd.read_csv(
     "/home/weber/PycharmProjects/ExoCarto/data/2_processed/GRCh37_RefSeq_lite_hgnc.csv.gz",
@@ -279,11 +279,15 @@ full_human_genes = pd.read_csv(
 
 full_human_genes = full_human_genes.loc[full_human_genes["mRNA_nb"] > 1]
 full_human_genes["MIM"] = full_human_genes["MIM"].astype(int)
-full_human_genes["HGNC"] = full_human_genes["HGNC"].astype(int)
-full_human_genes.loc[full_human_genes["Name"].isin(disease_genes), "STATUS"] = "DISEASE"
-full_human_genes.loc[~full_human_genes["Name"].isin(disease_genes), "STATUS"] = "HEALTHY"
-
-genes = full_human_genes["MIM"].unique()
+print(full_human_genes.MIM.nunique())
+# full_human_genes["HGNC"] = full_human_genes["HGNC"].astype(int)
+# full_human_genes.loc[full_human_genes["Name"].isin(disease_genes), "STATUS"] = "DISEASE"
+# full_human_genes.loc[~full_human_genes["Name"].isin(disease_genes), "STATUS"] = "HEALTHY"
+biomart = pd.read_csv("/gstock/EXOTIC/data/OTHERS/biomart_omim.txt.gz", compression="gzip", sep="\t")
+biomart = biomart.dropna(subset=["MIM gene accession"])
+biomart["MIM gene accession"] = biomart["MIM gene accession"].astype(int)
+genes = biomart["MIM gene accession"].unique()
+# genes = full_human_genes.MIM.unique()
 
 m = multiprocessing.Manager()
 l = m.list()
@@ -304,7 +308,7 @@ print(df)
 print(df.OMIM.nunique())
 
 df.to_csv(
-    "/home/weber/PycharmProjects/ExoCarto/data/clean/3_phenotypes/omim_genes_bodyparts_detailed.csv.gz",
+    "/home/weber/PycharmProjects/ExoCarto/data/clean/3_phenotypes/omim_genes_bodyparts_detailed_2021.csv.gz",
     compression="gzip",
     sep="\t",
     index=False,

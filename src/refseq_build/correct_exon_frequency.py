@@ -41,7 +41,7 @@ refseq_precomputed = pd.read_csv(exotic_files["EXOTIC"]["refseq_path"], compress
 
 def compute_mrna_refseq():
     o_file = exotic_files["RefSeq"]["refseq_mrna_cds"]
-    if os.path.isfile(o_file) is False:
+    if os.path.isfile(o_file) is True:
         mrna_df = pd.read_csv(
             "/home/weber/PycharmProjects/ExoCarto/data/1_interim/RefSeq_GRCh37_complete_new.csv.gz",
             compression="gzip",
@@ -84,7 +84,7 @@ def compute_mrna_refseq():
 
         merge_df_mrna_cds["mRNA_gene"] = merge_df_mrna_cds["mRNA_gene"].apply(list)
 
-        merge_df_mrna_cds.to_parquet(o_file)
+        # merge_df_mrna_cds.to_parquet(o_file)
     else:
         merge_df_mrna_cds = pd.read_parquet(o_file)
     return merge_df_mrna_cds
@@ -189,6 +189,7 @@ def process_new_file(refseq_corrected_transcripts):
 
 # FIRST PASS
 merge_df_mrna_cds = compute_mrna_refseq()
+exit()
 merge_df_mrna_cds = merge_df_mrna_cds.rename({"CDS": "ranges"}, axis=1)
 
 # CORRECT WITH GTEX

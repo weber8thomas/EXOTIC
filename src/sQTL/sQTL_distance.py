@@ -25,17 +25,15 @@ from utils.utils import load_config_file
 
 ## YAML FILES CONFIG
 yaml = load_config_file(config_file="/home/weber/PycharmProjects/EXOTIC/src/config.yaml")
-exotic_files = yaml
 
 
-# STEP 1 - prepare files
-
+# 1 - prepare files
 
 # TODO : add paths
 def prepare_files():
     # TODO : paths to change
 
-    exotic_37_38_path = "/gstock/EXOTIC/data/EXOTIC/EXOTIC_37_38.parquet"
+    exotic_37_38_path = yaml["EXOTIC"]["exotic_37_38"]
 
     if os.path.isfile(exotic_37_38_path) is False:
         biomart = pd.read_csv("/gstock/EXOTIC/data/OTHERS/biomart_refseq_ensembl_hgnc.txt.gz", compression="gzip", sep="\t")
@@ -81,11 +79,93 @@ def prepare_files():
     return exotic_37_38
 
 
+# TODO : handle file paths
+def get_transcripts_exotic(output_file):
+    if os.path.isfile(output_file) is False:
+        biomart = pd.read_csv("/gstock/EXOTIC/data/OTHERS/biomart_refseq_ensembl_hgnc.txt.gz", compression="gzip", sep="\t")
+
+        refseq_corrected_by_gtex = pd.read_parquet("/gstock/EXOTIC/data/GENOMICS/RefSeq_corrected_by_GTEx_lite.parquet")
+        refseq_corrected_by_gtex.loc[refseq_corrected_by_gtex["new_mRNA_nb_total"] == 1, "Gene_type"] = "Single Isoform"
+        refseq_corrected_by_gtex.loc[refseq_corrected_by_gtex["new_mRNA_nb_total"] > 1, "Gene_type"] = "Multi Isoform"
+        refseq_corrected_by_gtex["MAP"] = refseq_corrected_by_gtex.Gene + "_" + refseq_corrected_by_gtex.ranges.astype(str)
+        refseq_corrected_by_gtex.head()
+
+        dict_nm_enst = biomart[["RefSeq mRNA ID", "Transcript stable ID"]].dropna().set_index("RefSeq mRNA ID").to_dict()["Transcript stable ID"]
+
+        def convert_refseq_nm_to_enst(r):
+            def map_enst(nm):
+                try:
+                    return dict_nm_enst[nm]
+                except KeyError:
+                    pass
+
+            return [e for e in list(map(map_enst, r)) if e is not None]
+
+        tqdm.pandas()
+        refseq_corrected_by_gtex["ENST_exons"] = refseq_corrected_by_gtex["new_mRNA_exons"].progress_apply(convert_refseq_nm_to_enst)
+        refseq_corrected_by_gtex["ENST_exons_nb"] = refseq_corrected_by_gtex["ENST_exons"].apply(len)
+        refseq_corrected_by_gtex["Check_diff_NM_ENST_nb"] = refseq_corrected_by_gtex.apply(
+            lambda r: True if r["ENST_exons_nb"] == r["new_mRNA_nb"] else False, axis=1
+        )
+
+        refseq_corrected_by_gtex = refseq_corrected_by_gtex.loc[refseq_corrected_by_gtex["ENST_exons_nb"] > 0]
+
+        refseq_corrected_by_gtex.head()
+        exotic_processed = pd.read_parquet("/gstock/EXOTIC/data/EXOTIC/EXOTIC_modified_zscore.parquet")
+
+        exotic_processed_corrected = pd.merge(exotic_processed, refseq_corrected_by_gtex[["MAP", "ENST_exons", "new_mRNA_exons"]], on="MAP")
+        exotic_processed_corrected.to_parquet(output_file)
+    else:
+        exotic_processed_corrected = pd.read_parquet(output_file)
+    return exotic_processed_corrected
+
+
+def mp_sqtl(tissue, l_df, sqtlseeker_dir, exotic_processed_corrected):
+    sqtlseeker_tmp = pd.read_csv(sqtlseeker_dir + tissue + "/sqtls-0.05fdr.permuted.tsv.gz", compression="gzip", sep="\t")
+    sqtlseeker_tmp = sqtlseeker_tmp.melt(
+        id_vars=[c for c in sqtlseeker_tmp.columns if "tr." not in c],
+        value_vars=["tr.first", "tr.second"],
+        var_name="tr_type",
+        value_name="ENST",
+    )
+    sqtlseeker_tmp.ENST = sqtlseeker_tmp.ENST.apply(lambda r: r.split(".")[0])
+    sqtlseeker_tmp["Tissue"] = tissue
+    sqtlseeker_tmp["gene_id"] = sqtlseeker_tmp["geneId"].apply(lambda r: r.split(".")[0])
+    sqtlseeker_tmp = sqtlseeker_tmp.loc[sqtlseeker_tmp["md"] >= 0.05]
+    merge = pd.merge(exotic_processed_corrected.explode("ENST_exons"), sqtlseeker_tmp, left_on="ENST_exons", right_on="ENST")
+    l_df.append(merge)
+
+
+def merge_exotic_sqtl_files(output_file, exotic_processed_corrected):
+
+    if os.path.isfile(output_file) is False:
+
+        sqtlseeker_dir = "/gstock/biolo_datasets/QTL/sqlseeker-2/sQTLs.GTEx.V8.RSEM/"
+        sqtlseeker_listdir = sorted([d for d in os.listdir(sqtlseeker_dir) if "parquet" not in d])
+
+        m = multiprocessing.Manager()
+        l_df = m.list()
+        # for tissue in sqtlseeker_listdir:
+        parmap.starmap(mp_sqtl, list(zip(sqtlseeker_listdir)), l_df, sqtlseeker_dir, exotic_processed_corrected, pm_pbar=True)
+
+        exotic_sqtl = pd.concat(list(l_df)).sort_values(by=["symbol"])
+        # exotic_sqtl = exotic_sqtl.drop(['EXOTIC_check_pext_min', 'EXOTIC_check_pext_max'], axis=1)
+        # exotic_sqtl['EXOTIC_tissues_max'] = exotic_sqtl['EXOTIC_tissues_max'].astype(str)
+        # exotic_sqtl['EXOTIC_tissues_min'] = exotic_sqtl['EXOTIC_tissues_min'].astype(str)
+        # exotic_sqtl['Check_tissues_max'] = exotic_sqtl.apply(lambda r: True if r['Tissue'] in r['EXOTIC_tissues_max'] else False, axis=1)
+        # exotic_sqtl['Check_tissues_min'] = exotic_sqtl.apply(lambda r: True if r['Tissue'] in r['EXOTIC_tissues_min'] else False, axis=1)
+        exotic_sqtl.to_parquet(output_file)
+    else:
+        exotic_sqtl = pd.read_parquet(output_file)
+    return exotic_sqtl
+
+
 ## Merge EXOTIC & sQTL
 
 
-def merge_exotic_sqtl_files(exotic_37_38):
-    exotic_sqtl_38_path = "/gstock/EXOTIC/data/QTL/EXOTIC_sQTL_38_lite.parquet"
+def merge_exotic_sqtl_files_tmp(exotic_37_38):
+    # exotic_sqtl_38_path = "/gstock/EXOTIC/data/QTL/EXOTIC_sQTL_38_lite.parquet"
+    exotic_sqtl_38_path = "/gstock/EXOTIC/data/QTL/EXOTIC_sQTL_38.parquet"
     if os.path.isfile(exotic_sqtl_38_path) is False:
         merge_exotic_sqtl = pd.read_parquet("/gstock/EXOTIC/data/QTL/sQTL_ENST_modified_zscore.parquet").reset_index(drop=True)
 
@@ -166,7 +246,7 @@ def compute_exon_position(exotic_37_38, min_max="up", nb_bin=10, exotic_cutoffs=
     concat_df_distribution.to_excel("/gstock/EXOTIC/data/EXOTIC/EXOTIC_{}_density_exons_{}_bins.xlsx".format(min_max, str(nb_bin)))
 
 
-def check_position_sqtl(r):
+def check_position_sqtl(r, nb_bin):
 
     l = [0] * nb_bin
     for j, b in enumerate(r["Gene_bins"]):
@@ -178,15 +258,26 @@ def check_position_sqtl(r):
     return l
 
 
-def compute_sqtl_position_for_all():
-    sqtl_deduplicated = merge_exotic_sqtl_38[["ensg", "symbol", "MAP_38", "snpId", "Tissue"]].drop_duplicates()
-    sqtl_deduplicated["snpId_POS"] = sqtl_deduplicated["snpId"].apply(lambda r: int(r.split("_")[1]))
-    sqtl_deduplicated = pd.merge(
-        sqtl_deduplicated,
-        exotic_37_38_tmp[["Gene_bins", "Exon_bin", "MAP_38", "Strand", "EXOTIC_up", "EXOTIC_down", "EXOTIC_tissues_up", "EXOTIC_tissues_down"]],
-        on="MAP_38",
-    )
-    sqtl_deduplicated["snpId_bin"] = sqtl_deduplicated.parallel_apply(check_position_sqtl, axis=1)
+def compute_sqtl_position_for_all(merge_exotic_sqtl_38, exotic_37_38, nb_bin=10):
+    sqtl_bin_path = "/gstock/EXOTIC/data/QTL/sQTL_bin_location.parquet"
+    if os.path.isfile(sqtl_bin_path) is False:
+        exotic_37_38["Gene_bin_size"] = (exotic_37_38["Gene end (bp)"] - exotic_37_38["Gene start (bp)"]) / nb_bin
+        exotic_37_38["Gene_bins"] = exotic_37_38.progress_apply(
+            lambda r: [r["Gene start (bp)"]] + [int(round((1 + e) * r["Gene_bin_size"], 0) + r["Gene start (bp)"]) for e in range(nb_bin)], axis=1
+        )
+
+        sqtl_deduplicated = merge_exotic_sqtl_38[["ensg", "symbol", "MAP_38", "snpId", "Tissue"]].drop_duplicates()
+        sqtl_deduplicated["snpId_POS"] = sqtl_deduplicated["snpId"].apply(lambda r: int(r.split("_")[1]))
+        sqtl_deduplicated = pd.merge(
+            sqtl_deduplicated,
+            exotic_37_38[["Gene_bins", "MAP_38", "Strand", "EXOTIC_up", "EXOTIC_down", "EXOTIC_tissues_up", "EXOTIC_tissues_down"]],
+            on="MAP_38",
+        )
+        sqtl_deduplicated["snpId_bin"] = sqtl_deduplicated.parallel_apply(lambda r: check_position_sqtl(r, nb_bin), axis=1)
+        sqtl_deduplicated.to_parquet(sqtl_bin_path)
+    else:
+        sqtl_deduplicated = pd.read_parquet(sqtl_bin_path)
+    return sqtl_deduplicated
 
 
 def compute_sqtl_position_match_exotic(match_tissue=True, min_max="up", exotic_cutoffs=[0.5, 0.8, 0.9]):
@@ -226,6 +317,14 @@ def compute_sqtl_position_match_exotic(match_tissue=True, min_max="up", exotic_c
 
 
 if __name__ == "__main__":
-    exotic_37_38 = prepare_files()
-    compute_exon_position(exotic_37_38, min_max="up", nb_bin=10, exotic_cutoffs=[0.5, 0.8, 0.9])
-    print(merge_exotic_sqtl_files(exotic_37_38))
+    # exotic_37_38 = prepare_files()
+    # # compute_exon_position(exotic_37_38, min_max="up", nb_bin=10, exotic_cutoffs=[0.5, 0.8, 0.9])
+    # merge_exotic_sqtl_38 = merge_exotic_sqtl_files(exotic_37_38)
+    # compute_sqtl_position_for_all(merge_exotic_sqtl_38, exotic_37_38)
+    exotic_processed_corrected = get_transcripts_exotic("/gstock/EXOTIC/data/EXOTIC/EXOTIC_modified_corrected_zscore.parquet")
+    exotic_processed_corrected.to_csv(
+        "/gstock/EXOTIC/data/EXOTIC/EXOTIC_modified_corrected_zscore_with_transcripts.csv.gz", compression="gzip", sep="\t", index=False
+    )
+    # exotic_processed_corrected['ENST_exons'] = exotic_processed_corrected['ENST_exons']
+    # merge_exotic_sqtl = merge_exotic_sqtl_files("/gstock/EXOTIC/data/QTL/sQTL_ENST_modified_zscore.parquet", exotic_processed_corrected)
+    print(exotic_processed_corrected)

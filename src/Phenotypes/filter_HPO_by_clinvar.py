@@ -132,17 +132,12 @@ def prepare_dict_variants_pathogenic(
                             check = True
                             # check = False
                     elif db == "ClinVar":
-                        if (
-                            ("athogenic" in cln_sig) or ("enign" in cln_sig)
-                        ) and "onflict" not in cln_sig:
+                        if (("athogenic" in cln_sig) or ("enign" in cln_sig)) and "onflict" not in cln_sig:
 
                             # CLNREVSTAT
                             if variant.INFO["CLNREVSTAT"]:
                                 tmp_stats = variant.INFO["CLNREVSTAT"]
-                                if (
-                                    clinvar_review_status[tmp_stats] > 0
-                                    and "conflicting" not in tmp_stats
-                                ):
+                                if clinvar_review_status[tmp_stats] > 0 and "conflicting" not in tmp_stats:
                                     check = True
 
                 # GOOD REVIEW STATUS
@@ -156,24 +151,14 @@ def prepare_dict_variants_pathogenic(
                         csq = [csq]
 
                     # RETRIEVE MAX IMPACT FOR ALL VEP CASES (EXAMPLE : ONE VARIANT OVERLAP ON TWO GENES)
-                    max_impact = max(
-                        [
-                            vep_consequences[
-                                case.split(vep_separator)[index_dict["IMPACT"]]
-                            ]
-                            for case in csq
-                        ]
-                    )
+                    max_impact = max([vep_consequences[case.split(vep_separator)[index_dict["IMPACT"]]] for case in csq])
 
                     # LOOP ON CASES
                     for case in csq:
                         case = case.split(vep_separator)
 
                         # IF CASE == MAX IMPACT
-                        if (
-                            vep_consequences[case[index_dict["IMPACT"]]] == max_impact
-                            and max_impact > 0
-                        ):
+                        if vep_consequences[case[index_dict["IMPACT"]]] == max_impact and max_impact > 0:
                             hgnc = case[index_dict['HGNC_ID"']]
 
                             # IF HGNC IS PRESENT
@@ -206,9 +191,7 @@ def prepare_dict_variants_pathogenic(
                                                         + str(variant.ALT[0]),
                                                         "Xref": sub_hpo_case,
                                                         "HGNC": hgnc,
-                                                        "CLNREVSTAT": clinvar_review_status[
-                                                            tmp_stats
-                                                        ],
+                                                        "CLNREVSTAT": clinvar_review_status[tmp_stats],
                                                     }
                                                 )
 
@@ -295,17 +278,12 @@ def convert_clinvar_to_table(
 
                     # IF CLNSIG OK FOR SELECTED DB
                     if db == "ClinVar":
-                        if (
-                            ("athogenic" in cln_sig) or ("enign" in cln_sig)
-                        ) and "onflict" not in cln_sig:
+                        if (("athogenic" in cln_sig) or ("enign" in cln_sig)) and "onflict" not in cln_sig:
 
                             # CLNREVSTAT
                             if variant.INFO["CLNREVSTAT"]:
                                 tmp_stats = variant.INFO["CLNREVSTAT"]
-                                if (
-                                    clinvar_review_status[tmp_stats] >= 0
-                                    and "conflicting" not in tmp_stats
-                                ):
+                                if clinvar_review_status[tmp_stats] >= 0 and "conflicting" not in tmp_stats:
                                     check = True
 
                     # GOOD REVIEW STATUS
@@ -339,13 +317,7 @@ def convert_clinvar_to_table(
 
                         return_list.append(
                             {
-                                "VAR_ID": str(variant.CHROM)
-                                + "_"
-                                + str(variant.POS)
-                                + "_"
-                                + str(variant.REF)
-                                + "_"
-                                + str(variant.ALT[0]),
+                                "VAR_ID": str(variant.CHROM) + "_" + str(variant.POS) + "_" + str(variant.REF) + "_" + str(variant.ALT[0]),
                                 # 'CSQ' : case[index_dict['Consequence']],
                                 "MC": variant.MC.split("|")[1],
                                 "Status": status,
@@ -474,6 +446,13 @@ def convert_clinvar_to_table_wt_vep(vcf_file, d_stats):
 
                     rs = variant.INFO.get("RS")
 
+                    clnvi = np.nan
+                    if variant.INFO.get("CLNVI"):
+                        if "OMIM_Allelic_Variant" in variant.INFO.get("CLNVI"):
+                            clnvi = [
+                                e.replace("OMIM_Allelic_Variant:", "") for e in variant.INFO.get("CLNVI").split("|") if "OMIM_Allelic_Variant" in e
+                            ][0]
+
                     if variant.INFO.get("MC") and variant.INFO.get("GENEINFO"):
                         d_stats["MC_GENEINFO"] += 1
 
@@ -484,12 +463,7 @@ def convert_clinvar_to_table_wt_vep(vcf_file, d_stats):
                             clndisdb = variant.INFO.get("CLNDISDB").split("|")
                         else:
                             clndisdb = []
-                        hpo = [
-                            sub_e.replace("Human_Phenotype_Ontology:", "")
-                            for e in clndisdb
-                            for sub_e in e.split(",")
-                            if "HP" in sub_e
-                        ]
+                        hpo = [sub_e.replace("Human_Phenotype_Ontology:", "") for e in clndisdb for sub_e in e.split(",") if "HP" in sub_e]
                         geneinfo = variant.INFO.get("GENEINFO").split(":")[0]
 
                         if "enign" in cln_sig:
@@ -505,13 +479,7 @@ def convert_clinvar_to_table_wt_vep(vcf_file, d_stats):
                         return_list.append(
                             {
                                 "GENE": geneinfo,
-                                "VAR_ID": str(variant.CHROM)
-                                + "_"
-                                + str(variant.POS)
-                                + "_"
-                                + str(variant.REF)
-                                + "_"
-                                + str(variant.ALT),
+                                "VAR_ID": str(variant.CHROM) + "_" + str(variant.POS) + "_" + str(variant.REF) + "_" + str(variant.ALT),
                                 "CHROM": str(variant.CHROM),
                                 "POS": variant.POS,
                                 "REF": str(variant.REF),
@@ -524,6 +492,7 @@ def convert_clinvar_to_table_wt_vep(vcf_file, d_stats):
                                 "HPO": hpo,
                                 "rs": rs,
                                 "alleleid": alleleid,
+                                "OMIM_VARIANT_ID": clnvi,
                             }
                         )
         except KeyError:
