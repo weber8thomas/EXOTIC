@@ -34,9 +34,7 @@ transcript_correction_file = pd.read_csv(exotic_files["GTEX"]["transcript_check_
 
 transcripts_checked = set(transcript_correction_file.RefSeq_mRNAID.values.tolist())
 
-refseq_precomputed = pd.read_csv(exotic_files["EXOTIC"]["refseq_path"], compression="gzip", sep="\t").drop_duplicates(
-    subset=["Gene", "ranges", "HGNC"]
-)
+refseq_precomputed = pd.read_csv(exotic_files["EXOTIC"]["refseq_path"], compression="gzip", sep="\t").drop_duplicates(subset=["Gene", "ranges", "HGNC"])
 
 
 def compute_mrna_refseq():
@@ -135,15 +133,11 @@ def process_new_file(refseq_corrected_transcripts):
     )
 
     # MERGE EXON & GENE LEVELS
-    refseq_corrected_transcripts = pd.merge(
-        refseq_corrected_transcripts, refseq_corrected_transcripts_gene_level[["Gene", "new_mRNA_gene"]], on="Gene"
-    )
+    refseq_corrected_transcripts = pd.merge(refseq_corrected_transcripts, refseq_corrected_transcripts_gene_level[["Gene", "new_mRNA_gene"]], on="Gene")
 
     # COMPUTE
     refseq_corrected_transcripts["new_mRNA_nb_total"] = refseq_corrected_transcripts["new_mRNA_gene"].apply(len)
-    refseq_corrected_transcripts["new_Ratio"] = (
-        refseq_corrected_transcripts["new_mRNA_nb"].astype(str) + "/" + refseq_corrected_transcripts["new_mRNA_nb_total"].astype(str)
-    )
+    refseq_corrected_transcripts["new_Ratio"] = refseq_corrected_transcripts["new_mRNA_nb"].astype(str) + "/" + refseq_corrected_transcripts["new_mRNA_nb_total"].astype(str)
     refseq_corrected_transcripts["new_Ratio_num"] = refseq_corrected_transcripts["new_Ratio"].apply(eval)
     refseq_corrected_transcripts["new_Ratio_num"] = refseq_corrected_transcripts["new_Ratio_num"].astype(float)
 
@@ -155,9 +149,7 @@ def process_new_file(refseq_corrected_transcripts):
     bins = [0, 0.2, 0.4, 0.6, 0.8, 1]
     labels = bins.copy()
     labels_ratio = [str(round(labels[j], 1)) + " - " + str(round(labels[j + 1], 1)) for j in range(len(labels) - 1)]
-    refseq_corrected_transcripts["new_Ratio_num_bins"] = pd.cut(
-        refseq_corrected_transcripts["new_Ratio_num"], bins=bins, labels=labels_ratio, include_lowest=True
-    )
+    refseq_corrected_transcripts["new_Ratio_num_bins"] = pd.cut(refseq_corrected_transcripts["new_Ratio_num"], bins=bins, labels=labels_ratio, include_lowest=True)
 
     # DUPLICATES
     refseq_corrected_transcripts = refseq_corrected_transcripts.drop_duplicates(subset=["Gene", "ranges"])
@@ -173,9 +165,7 @@ def process_new_file(refseq_corrected_transcripts):
     t = refseq_corrected_transcripts.groupby(["Gene", "new_mRNA_nb_total"])["ranges"].agg("nunique").reset_index()
 
     # MERGE WITH PREVIOUS
-    refseq_corrected_transcripts = pd.merge(
-        refseq_corrected_transcripts, t.rename({"ranges": "new_CDS_count"}, axis=1), on=["Gene", "new_mRNA_nb_total"]
-    )
+    refseq_corrected_transcripts = pd.merge(refseq_corrected_transcripts, t.rename({"ranges": "new_CDS_count"}, axis=1), on=["Gene", "new_mRNA_nb_total"])
 
     # OUPUTS
     refseq_corrected_transcripts.to_parquet(exotic_files["RefSeq"]["refseq_corrected_lite"], index=False)

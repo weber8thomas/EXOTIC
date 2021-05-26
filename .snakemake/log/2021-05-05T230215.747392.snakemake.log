@@ -1,0 +1,4 @@
+Building DAG of jobs...
+MissingInputException in line 18 of /enadisk/maison/sage2016/weber/PycharmProjects/EXOTIC/Snakefile:
+Missing input files for rule refseq_get_coding_genes:
+data/0_external/GRCh37_latest_genomic.gff.gz

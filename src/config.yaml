@@ -17,7 +17,7 @@ EXOTIC:
 
   # gtex_pext_exon_file_path: /home/weber/PycharmProjects/ExoCarto/data/clean/2_expression/RefSeq_PEXT_GTEx.parquet
   # omim_global: /home/weber/PycharmProjects/ExoCarto/data/clean/3_phenotypes/omim_genes_bodyparts.csv.gz
-  omim_detailed:  /gstock/EXOTIC/data/PHENOTYPES/omim_genes_bodyparts_detailed.csv.gz
+  omim_detailed: /gstock/EXOTIC/data/PHENOTYPES/omim_genes_bodyparts_detailed.csv.gz
   clinvar_file_path: /gstock/EXOTIC/data/VARIATIONS/clinvar_20210123_lite_table.parquet
   refseq_gene_level_path: /gstock/EXOTIC/data/GENOMICS/GRCh37_RefSeq_lite_hgnc.csv.gz
   clinvar_pmid_mapping_path: /gstock/biolo_datasets/variation/variation_sets/clinvar/tab/var_citations.txt

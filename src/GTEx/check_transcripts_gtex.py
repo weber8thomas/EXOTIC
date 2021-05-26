@@ -35,18 +35,6 @@ biomart_grch37 = pd.read_csv(
     sep="\t",
 )
 
-print(biomart_grch37)
-print(biomart_grch37.columns)
-
-print(biomart_grch37.loc[biomart_grch37["Gene type"] == "protein_coding"])
-print(
-    biomart_grch37.loc[
-        biomart_grch37["Gene type"] == "protein_coding", "Gene name"
-    ].nunique()
-)
-
-
-exit()
 biomart_grch37 = biomart_grch37[
     [
         "Transcript stable ID",

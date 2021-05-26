@@ -18,8 +18,11 @@
 	"If output_file exists": {
 		"prefix": "ot",
 		"body": [
-			"if os.path.isfile(output_file):",
-			""
+			"def fct(path):",
+			"\tif os.path.isfile(path) is False:",
+			"\t\tpass",
+			"\telse:",
+			"\t\tpass"
 		],
 		"description": "Create if istince to check if output file exists"
 	},
