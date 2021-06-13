@@ -43,7 +43,7 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
+
             # * 0 Load raw file
             refseq_grch37_gff = yaml["1_GENOMICS"]["External"]["raw_refseq"]
             refseq_df = self.load_refseq(refseq_grch37_gff)
@@ -58,8 +58,22 @@ class ProcessRefSeq:
             refseq_df_cds = self.refseq_cds_fct(yaml["1_GENOMICS"]["TMP"]["tmp_refseq_cds"], refseq_df)
 
             # * 2 Select exons(with UTRs) & coding exons
-            self.select_exons(yaml["1_GENOMICS"]["TMP"]["tmp_refseq_exons_filtered"], refseq_df_chroms, refseq_df_mrnas, refseq_df_pc_genes, refseq_df_exons, "Exon")
-            self.select_exons(yaml["1_GENOMICS"]["TMP"]["tmp_refseq_cds_filtered"], refseq_df_chroms, refseq_df_mrnas, refseq_df_pc_genes, refseq_df_cds, "CDS")
+            self.select_exons(
+                yaml["1_GENOMICS"]["TMP"]["tmp_refseq_exons_filtered"],
+                refseq_df_chroms,
+                refseq_df_mrnas,
+                refseq_df_pc_genes,
+                refseq_df_exons,
+                "Exon",
+            )
+            self.select_exons(
+                yaml["1_GENOMICS"]["TMP"]["tmp_refseq_cds_filtered"],
+                refseq_df_chroms,
+                refseq_df_mrnas,
+                refseq_df_pc_genes,
+                refseq_df_cds,
+                "CDS",
+            )
 
             # * 3 Concat tmp files
             concat_exons_cds = self.concat_exons_cds_fct(
@@ -140,12 +154,14 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
+
             refseq_df_chroms = refseq_df.loc[refseq_df["Region_type"] == "region"]
             index_list = list(refseq_df_chroms.index)
 
             chroms = [(i, index_list[j + 1] - 1) for j, i in enumerate(index_list) if j < (len(index_list) - 1)]
-            refseq_df_chroms = refseq_df_chroms.loc[(refseq_df_chroms["NC"].str.contains("NC")) & (refseq_df_chroms["RefSeq_validation"] == "RefSeq")]
+            refseq_df_chroms = refseq_df_chroms.loc[
+                (refseq_df_chroms["NC"].str.contains("NC")) & (refseq_df_chroms["RefSeq_validation"] == "RefSeq")
+            ]
             refseq_df_chroms.to_parquet(path)
         else:
             print("# Files exist ✓, Loading ... ")
@@ -167,8 +183,10 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
-            refseq_df_pc_genes = refseq_df.loc[(refseq_df["Attributes"].str.contains("gene_biotype=protein_coding")) & (refseq_df["NC"].str.contains("NC_"))]
+
+            refseq_df_pc_genes = refseq_df.loc[
+                (refseq_df["Attributes"].str.contains("gene_biotype=protein_coding")) & (refseq_df["NC"].str.contains("NC_"))
+            ]
             refseq_df_pc_genes.to_parquet(path)
         else:
             print("# Files exist ✓, Loading ... ")
@@ -190,8 +208,10 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
-            refseq_df_mrna = refseq_df.loc[(refseq_df["Attributes"].str.contains("NM_")) & (refseq_df["Region_type"] == "mRNA") & (refseq_df["NC"].str.contains("NC_"))]
+
+            refseq_df_mrna = refseq_df.loc[
+                (refseq_df["Attributes"].str.contains("NM_")) & (refseq_df["Region_type"] == "mRNA") & (refseq_df["NC"].str.contains("NC_"))
+            ]
             refseq_df_mrna.to_parquet(path)
         else:
             print("# Files exist ✓, Loading ... ")
@@ -213,8 +233,12 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
-            refseq_df_exons = refseq_df.loc[(refseq_df["Attributes"].str.contains("exon-NM")) & (refseq_df["Region_type"] == "exon") & (refseq_df["NC"].str.contains("NC_"))]
+
+            refseq_df_exons = refseq_df.loc[
+                (refseq_df["Attributes"].str.contains("exon-NM"))
+                & (refseq_df["Region_type"] == "exon")
+                & (refseq_df["NC"].str.contains("NC_"))
+            ]
             refseq_df_exons.to_parquet(path)
         else:
             print("# Files exist ✓, Loading ... ")
@@ -236,8 +260,10 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
-            refseq_df_cds = refseq_df.loc[(refseq_df["Attributes"].str.contains("NP_")) & (refseq_df["Region_type"] == "CDS") & (refseq_df["NC"].str.contains("NC_"))]
+
+            refseq_df_cds = refseq_df.loc[
+                (refseq_df["Attributes"].str.contains("NP_")) & (refseq_df["Region_type"] == "CDS") & (refseq_df["NC"].str.contains("NC_"))
+            ]
             refseq_df_cds.to_parquet(path)
         else:
             print("# Files exist ✓, Loading ... ")
@@ -270,7 +296,9 @@ class ProcessRefSeq:
                     # print(e, cds, start_index, stop_index)
                     # print(exons.loc[cds])
                     current_gene_cds = [e.replace("gene=", "") for e in exons.loc[cds]["Attributes"].split(";") if "gene" in e][0]
-                    parent_mrna = [e.replace("Parent=rna-", "") for e in exons.loc[cds]["Attributes"].split(";") if "Parent" in e][0].split(".")[0]
+                    parent_mrna = [e.replace("Parent=rna-", "") for e in exons.loc[cds]["Attributes"].split(";") if "Parent" in e][0].split(
+                        "."
+                    )[0]
                     mrna_index = mrnas.loc[mrnas["Attributes"].str.contains(parent_mrna)].index[0]
 
                     # COMPARE GENE NAMES
@@ -308,7 +336,6 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
 
             # CREATE LIST
             l = list()
@@ -316,7 +343,9 @@ class ProcessRefSeq:
             # MP FCT
             m = multiprocessing.Manager()
             l = m.list()
-            parmap.starmap(self.mp_build_list, list(zip(enumerate(list(pc_genes.index)))), l, chroms, mrnas, pc_genes, exons, type_exon, pm_pbar=True)
+            parmap.starmap(
+                self.mp_build_list, list(zip(enumerate(list(pc_genes.index)))), l, chroms, mrnas, pc_genes, exons, type_exon, pm_pbar=True
+            )
 
             df = pd.DataFrame(list(l)).sort_values(by=["Gene", "Exon_start", "Exon_stop"]).drop_duplicates()
             df["Length"] = df["Exon_stop"] - df["Exon_start"]
@@ -341,9 +370,13 @@ class ProcessRefSeq:
         """
         if os.path.isfile(path_tmp_exons_cds) is False:
             concat_df_exons_cds = (
-                pd.concat([pd.read_parquet(path_tmp_exons), pd.read_parquet(path_tmp_cds)]).sort_values(by=["Gene", "Exon_start", "Exon_stop"]).reset_index(drop=True)
+                pd.concat([pd.read_parquet(path_tmp_exons), pd.read_parquet(path_tmp_cds)])
+                .sort_values(by=["Gene", "Exon_start", "Exon_stop"])
+                .reset_index(drop=True)
             )
-            concat_df_exons_cds["ranges"] = concat_df_exons_cds["Exon_start"].astype(str) + "-" + concat_df_exons_cds["Exon_stop"].astype(str)
+            concat_df_exons_cds["ranges"] = (
+                concat_df_exons_cds["Exon_start"].astype(str) + "-" + concat_df_exons_cds["Exon_stop"].astype(str)
+            )
             concat_df_exons_cds.to_parquet(path_tmp_exons_cds)
 
         else:
@@ -366,12 +399,14 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
 
             # Merge Exon info & mRNA list / exon
             df = (
                 pd.merge(
-                    concat_exons_cds[["Gene", "ranges", "Exon_type", "mRNA"]].groupby(["Gene", "Exon_type", "ranges"])["mRNA"].apply(list).reset_index(),
+                    concat_exons_cds[["Gene", "ranges", "Exon_type", "mRNA"]]
+                    .groupby(["Gene", "Exon_type", "ranges"])["mRNA"]
+                    .apply(list)
+                    .reset_index(),
                     concat_exons_cds[["Gene", "ranges", "Exon_start", "Exon_stop", "Length", "Exon_type", "Strand"]].drop_duplicates(),
                     on=["Gene", "ranges", "Exon_type"],
                 )
@@ -514,7 +549,9 @@ class ProcessRefSeq:
                     previous_mrnas = mrnas
 
             complete_list.append(
-                pd.concat([df_gene.loc[(~df_gene["Exon_start"].isin(l_start)) & (~df_gene["Exon_stop"].isin(l_stop))], pd.DataFrame(l)], axis=0).sort_values(by="ranges")
+                pd.concat(
+                    [df_gene.loc[(~df_gene["Exon_start"].isin(l_start)) & (~df_gene["Exon_stop"].isin(l_stop))], pd.DataFrame(l)], axis=0
+                ).sort_values(by="ranges")
             )
         return complete_list
 
@@ -523,7 +560,7 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
+
             complete_list = list()
             df = df.loc[df["Exon_type"] == "CDS"]
             # parmap.starmap(self.mp_process_variable, list(zip(df.Gene.unique().tolist())), complete_list, df, pm_pbar=True)
@@ -533,7 +570,11 @@ class ProcessRefSeq:
             df_with_variable["Ratio_num"] = df_with_variable["Ratio"].apply(eval)
             df_with_variable.loc[df_with_variable["Ratio_num"] < 1, "Const_Alt"] = "Alt"
             df_with_variable.loc[df_with_variable["Ratio_num"] == 1, "Const_Alt"] = "Const"
-            df_with_variable = pd.merge(df_with_variable, df_with_variable.groupby("Gene")["ranges"].count().reset_index().rename({"ranges": "CDS_count"}, axis=1), on="Gene")
+            df_with_variable = pd.merge(
+                df_with_variable,
+                df_with_variable.groupby("Gene")["ranges"].count().reset_index().rename({"ranges": "CDS_count"}, axis=1),
+                on="Gene",
+            )
             df_with_variable.to_parquet(path)
         else:
             print("# Files exist ✓, Loading ... ")
@@ -561,7 +602,11 @@ class ProcessRefSeq:
                 else:
                     strand = strand_l[0]
 
-                tmp_l = [k for k, v in dict(collections.Counter([sub_e for elem in exons_including_utrs for sub_e in elem.split(",")])).items() if v < len(exons_including_utrs)]
+                tmp_l = [
+                    k
+                    for k, v in dict(collections.Counter([sub_e for elem in exons_including_utrs for sub_e in elem.split(",")])).items()
+                    if v < len(exons_including_utrs)
+                ]
 
                 for utr in tmp_l:
                     index = exons_including_utrs_split.index(utr)
@@ -588,17 +633,21 @@ class ProcessRefSeq:
 
         if os.path.isfile(path) is False:
             print("# Files don't exist ☒")
-            
+
             df = pd.DataFrame(complete_df.groupby("Gene")["ranges"].apply(lambda r: list(r))).reset_index()
             mrna_count = complete_df.loc[complete_df["mRNA_gene_nb"] > 1, ["Gene", "mRNA_gene_nb"]].drop_duplicates()
             print(mrna_count)
 
-            tmp_df = complete_df.loc[(complete_df["Gene"].isin(mrna_count.Gene.values.tolist())) & (complete_df["Exon_type"] == "CDS")].explode("mRNA_exons")
+            tmp_df = complete_df.loc[
+                (complete_df["Gene"].isin(mrna_count.Gene.values.tolist())) & (complete_df["Exon_type"] == "CDS")
+            ].explode("mRNA_exons")
             cds_join = pd.DataFrame(tmp_df.groupby(["Gene", "mRNA_exons"])["ranges"].apply(",".join))
             cds_join.columns = ["CDS_ranges"]
             print(cds_join)
 
-            tmp_df = complete_df.loc[(complete_df["Gene"].isin(mrna_count.Gene.values.tolist())) & (complete_df["Exon_type"] == "Exon")].explode("mRNA_exons")
+            tmp_df = complete_df.loc[
+                (complete_df["Gene"].isin(mrna_count.Gene.values.tolist())) & (complete_df["Exon_type"] == "Exon")
+            ].explode("mRNA_exons")
             exon_join = pd.DataFrame(tmp_df.groupby(["Gene", "mRNA_exons"])["ranges"].apply(",".join))
             exon_join.columns = ["Exons_ranges"]
 
@@ -609,7 +658,9 @@ class ProcessRefSeq:
 
             df = pd.DataFrame(cds_join.groupby("Gene")["CDS_ranges"].apply(lambda r: list(r))).reset_index()
             print(df)
-            df[["5_prime_modif", "3_prime_modif", "Nb_combi"]] = df.CDS_ranges.progress_apply(lambda r: self.counter(r, concat_cds_exon_join))
+            df[["5_prime_modif", "3_prime_modif", "Nb_combi"]] = df.CDS_ranges.progress_apply(
+                lambda r: self.counter(r, concat_cds_exon_join)
+            )
             print(df)
             df.to_parquet(path)
         else:

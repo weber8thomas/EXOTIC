@@ -34,8 +34,13 @@
   Final:
     transcript_check: /gstock/EXOTIC/data/EXPRESSION/GTEx_V7_transcript_checking.csv.gz
     transcript_check_refseq: /gstock/EXOTIC/data/EXPRESSION/GTEx_V7_transcript_checking_refseq_final.csv.gz
+    transcript_check_refseq_test: /gstock/EXOTIC/data/EXPRESSION/GTEx_V7_transcript_checking_refseq_final_test.csv.gz
     refseq_corrected_cds_with_variable: /gstock/EXOTIC/data/GENOMICS/refseq_37_corrected_cds_variable.parquet
+    # refseq_corrected_cds_with_variable_test: /gstock/EXOTIC/data/GENOMICS/refseq_37_corrected_cds_variable_test.parquet
     refseq_corrected_cds_recomputed: /gstock/EXOTIC/data/GENOMICS/refseq_37_corrected_recomputed.parquet
+    # refseq_corrected_cds_recomputed_test: /gstock/EXOTIC/data/GENOMICS/refseq_37_corrected_recomputed_test.parquet
+  Figures_data:
+    comparison_ensembl_refseq: /gstock/EXOTIC/clean/FIGURES/1_ISOFORMS/stats_ensembl_refseq_correction.xlsx
 
 3_EXONS_PROPERTIES:
   External:
@@ -52,9 +57,10 @@
     phylocsf_lite: /gstock/EXOTIC/data/CONSERVATION/phylocsf_data_lite.bed
     refseq_phylocsf_start: /gstock/EXOTIC/data/EXON_PROPERTIES/refseq_phylocsf_start.tsv.gz
     refseq_phylocsf_end: /gstock/EXOTIC/data/EXON_PROPERTIES/refseq_phylocsf_end.tsv.gz
+    clinvar_tmp_hail_table: /gstock/biolo_datasets/variation/variation_sets/clinvar/vcf_GRCh37/v2/clinvar_20210123.ht
   Final:
     refseq_gnomad_hail_retrieved: /gstock/EXOTIC/data/EXON_PROPERTIES/refseq_miso_gnomad_variations.parquet
-    refseq_clinvar_hail_retrieved: /gstock/EXOTIC/data/EXON_PROPERTIES/refseq_clinvar_pathogenic.parquet
+    refseq_clinvar_hail_retrieved: &clinvar /gstock/EXOTIC/data/EXON_PROPERTIES/refseq_clinvar_pathogenic.parquet
     refseq_ccr_start_end: /gstock/EXOTIC/data/EXON_PROPERTIES/refseq_ccr_start_end.parquet
     refseq_phylocsf: /gstock/EXOTIC/data/EXON_PROPERTIES/refseq_phylocsf.parquet
   Figures_data:
@@ -69,8 +75,10 @@
     pext_groupby_refseq: /gstock/EXOTIC/data/EXPRESSION/TMP/pext_groupby.tsv.gz
   Final:
     dext: /gstock/EXOTIC/data/EXOTIC/dext_matrix.parquet
+    dext_test: /gstock/EXOTIC/data/EXOTIC/dext_matrix_test.parquet
   Figures_data:
     dext_stats: /gstock/EXOTIC/clean/FIGURES/3_EXPRESSION/dext_stats.xlsx
+    dext_stats_test: /gstock/EXOTIC/clean/FIGURES/3_EXPRESSION/dext_stats_test.xlsx
     dext_stats_complete: /gstock/EXOTIC/clean/FIGURES/3_EXPRESSION/dext_stats_complete.xlsx
     dext_stats_complete_genes: /gstock/EXOTIC/clean/FIGURES/3_EXPRESSION/dext_stats_complete_genes.xlsx
     dext_distribution: /gstock/EXOTIC/clean/FIGURES/3_EXPRESSION/dext_distribution.xlsx
@@ -80,7 +88,19 @@
     dext_vertical_barplot: /gstock/EXOTIC/clean/FIGURES/3_EXPRESSION/vertical_barplot.xlsx
     dext_diff_barplot: /gstock/EXOTIC/clean/FIGURES/3_EXPRESSION/diff_barplot.xlsx
 
-5_PATHOGENICITY: AA
+5_PATHOGENICITY:
+  External:
+    biomart_omim: /gstock/EXOTIC/data/OTHERS/biomart_omim.txt.gz
+  TMP:
+    omim_api_dump_directory: /gstock/biolo_datasets/variation/benchmark/Databases/OMIM/JSON_API/
+    omim_df_bodyparts_phenotypes: /gstock/EXOTIC/data/PHENOTYPES/omim_df_bodyparts_phenotypes.parquet
+    omim_specific_pheno: /gstock/EXOTIC/data/PHENOTYPES/omim_specific_phenotypes.parquet
+    dext_omim: /gstock/EXOTIC/data/PHENOTYPES/dext_omim.parquet
+    dext_omim_clinvar: /gstock/EXOTIC/data/PHENOTYPES/dext_omim_clinvar_tmp.xlsx
+    clinvar_omim_processed: /gstock/EXOTIC/data/PHENOTYPES/clinvar_omim_processed_phenotypes.parquet
+    clinvar_full: /gstock/EXOTIC/data/VARIATIONS/clinvar_full_pathogenic.parquet
+  Final:
+
 6_sQTLs:
   External:
     sqtlseeker_dir: /gstock/EXOTIC/data/QTL/sQTLs.GTEx.V8.RSEM/
@@ -90,11 +110,25 @@
     genes_bed_37: /gstock/EXOTIC/data/GENOMICS/genes_37.bed
     dext_bed_38: /gstock/EXOTIC/data/EXPRESSION/dext_38.bed
     genes_bed_38: /gstock/EXOTIC/data/GENOMICS/genes_38.bed
+    dext_sqtl_map: /gstock/EXOTIC/data/QTL/sQTL_dext_map.parquet
+
   Final:
     dext_sqtl: /gstock/EXOTIC/data/QTL/sQTL_dext.parquet
     dext_sqtl_lite: /gstock/EXOTIC/data/QTL/sQTL_dext_lite.parquet
     dext_sqtl_biomart_37: /gstock/EXOTIC/data/QTL/sQTL_dext_biomart_37.parquet
   Figures_data:
+    exons_location_cutoffs: /gstock/EXOTIC/data/EXOTIC/dext_density_exons_cutoffs.xlsx
+    exons_location_all: /gstock/EXOTIC/data/EXOTIC/dext_density_exons_all.xlsx
+    exons_location_cutoff: /gstock/EXOTIC/data/EXOTIC/dext_density_exons_cutoff.xlsx
+    exons_location_cutoff_specific: /gstock/EXOTIC/data/EXOTIC/dext_density_exons_cutoff_specific.xlsx
     exons_location: /gstock/EXOTIC/data/EXOTIC/dext_density_exons.xlsx
     sqtls_location: /gstock/EXOTIC/data/EXOTIC/all_sqtls_density.xlsx
-    match_sqtls_location: /gstock/EXOTIC/data/EXOTIC/match_sqtls_density.xlsx
+    match_sqtls_location_cutoff: /gstock/EXOTIC/data/EXOTIC/match_sqtls_density_cutoff.xlsx
+    match_sqtls_location_cutoffs: /gstock/EXOTIC/data/EXOTIC/match_sqtls_density_cutoffs.xlsx
+
+7_LOCATION:
+  External:
+  TMP:
+    refseq_genes_bins: /gstock/EXOTIC/data/GENOMICS/refeq_genes_bins.parquet
+    refseq_exons_bins: /gstock/EXOTIC/data/GENOMICS/refeq_exons_bins.parquet
+  Final:

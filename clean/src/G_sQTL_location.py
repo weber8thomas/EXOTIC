@@ -65,18 +65,19 @@ class sQTL_location:
         dext_remap_final = self.merge_remap(dext_path=yaml["4_DEXT"]["Final"]["dext"], genes=genes_remap, exons=dext_remap)
 
         distribution_location_exons = self.compute_exon_bin(
-            dext=dext_remap_final, output_path=yaml["6_sQTLs"]["Figures_data"]["exons_location"]
+            dext=dext_remap_final, output_path=yaml["6_sQTLs"]["Figures_data"]["exons_location_cutoff"]
         )
+        # exit()
 
-        # distribution_location_all_sqtls = self.compute_all_sqtl_bin(
-        #     dext=dext_remap_final,
-        #     output_path=yaml["6_sQTLs"]["Figures_data"]["sqtls_location"],
-        #     sqtl_path=yaml["6_sQTLs"]["Final"]["dext_sqtl"],
-        # )
+        distribution_location_all_sqtls = self.compute_all_sqtl_bin(
+            dext=dext_remap_final,
+            output_path=yaml["6_sQTLs"]["Figures_data"]["sqtls_location"],
+            sqtl_path=yaml["6_sQTLs"]["Final"]["dext_sqtl"],
+        )
 
         distribution_location_all_sqtls = self.compute_sqtl_bin(
             dext=dext_remap_final,
-            output_path=yaml["6_sQTLs"]["Figures_data"]["match_sqtls_location"],
+            output_path=yaml["6_sQTLs"]["Figures_data"]["match_sqtls_location_cutoff"],
             sqtl_path=yaml["6_sQTLs"]["Final"]["dext_sqtl"],
         )
 
@@ -204,7 +205,7 @@ class sQTL_location:
         return l
 
     def compute_exon_bin(self, output_path, dext):
-        print("# Compute sQTL location for all bin number given in config / File : {}".format(output_path))
+        print("# Compute exon location for all bin number given in config / File : {}".format(output_path))
 
         if os.path.isfile(output_path) is False:
 
@@ -216,9 +217,14 @@ class sQTL_location:
 
             l = list()
 
-            dext_percentiles = [0] + list(np.arange(0.5, 0.99, 0.05)) + [0.99]
+            # dext_percentiles = list(np.arange(0.5, 0.99, 0.1))
+
+            # dext_percentiles = [0.926, 0.9715]
+            # dext_percentiles = [0.6, 0.7, 0.8, 0.9]
+            dext_percentiles = [0.6]
 
             for nb_bin in [3, 5, 10, 20]:
+                # for nb_bin in [10]:
                 dext = self.compute_bins(dext, nb_bin)
 
                 for min_max in ["up", "down"]:
@@ -230,17 +236,36 @@ class sQTL_location:
 
                         if min_max == "up":
 
-                            cutoff = round(dext["dext_{}".format(min_max)].quantile(prct), 2)
-                            dext_tmp_cutoff = dext.loc[dext["dext_{}".format(min_max)] >= cutoff]
+                            # cutoff = round(dext["dext_{}".format(min_max)].quantile(prct), 2)
+                            cutoff = 0.5
+                            # diff_spec = list(
+                            # set(dext.loc[dext["dext_{}".format(min_max)] >= cutoff, "Gene"].unique().tolist()).difference(
+                            # set(dext.loc[dext["dext_{}".format(min_max)] < cutoff, "Gene"].unique().tolist())
+                            # )
+                            # )
+
+                            # dext_tmp_cutoff = dext.loc[(dext["dext_{}".format(min_max)] >= cutoff) & (dext["Gene"].isin(diff_spec))]
+                            dext_tmp_cutoff = dext.loc[(dext["dext_{}".format(min_max)] >= cutoff)]
 
                         elif min_max == "down":
-                            cutoff = round(dext["dext_{}_reversed".format(min_max)].quantile(prct), 2)
-                            dext_tmp_cutoff = dext.loc[dext["dext_{}_reversed".format(min_max)] >= cutoff]
+                            # cutoff = round(dext["dext_{}_reversed".format(min_max)].quantile(prct), 2)
+                            cutoff = 0.5
+
+                            # diff_spec = list(
+                            # set(dext.loc[dext["dext_{}_reversed".format(min_max)] >= cutoff, "Gene"].unique().tolist()).difference(
+                            # set(dext.loc[dext["dext_{}_reversed".format(min_max)] < cutoff, "Gene"].unique().tolist())
+                            # )
+                            # )
+
+                            dext_tmp_cutoff = dext.loc[(dext["dext_{}_reversed".format(min_max)] >= cutoff)]
+                            # dext_tmp_cutoff = dext.loc[
+                            # (dext["dext_{}_reversed".format(min_max)] >= cutoff) & (dext["Gene"].isin(diff_spec))
+                            # ]
 
                         print("Nb bin : {}, Up/Down : {}, Top prct diff : {}, Cutoff associated : {}".format(nb_bin, min_max, prct, cutoff))
 
                         dext_tmp_cutoff["Exon_bin"] = dext_tmp_cutoff.apply(lambda r: self.compute_exon_bin_fct(r, nb_bin), axis=1)
-                        print(dext_tmp_cutoff)
+                        # print(dext_tmp_cutoff)
                         tmp_d = {
                             k: v
                             for k, v in dict(
@@ -248,10 +273,9 @@ class sQTL_location:
                                     [",".join([str(sub_e) for sub_e in e]) for e in dext_tmp_cutoff.Exon_bin.values.tolist()]
                                 )
                             ).items()
-                            if v > nb_bin
+                            # if v > nb_bin
                         }
-                        print(tmp_d)
-                        exit()
+                        # print(tmp_d)
                         tmp_d = [[v if int(e) == 1 else 0 for e in k.split(",")] for k, v in tmp_d.items()]
                         tmp_df = pd.DataFrame(tmp_d)
                         tmp_df.loc["Total"] = tmp_df.sum(axis=0)
@@ -383,69 +407,81 @@ class sQTL_location:
     def compute_sqtl_bin(self, output_path, sqtl_path, dext):
         print("# Compute dsQTL & non-dsQTLs location for all bin number given in config / File : {}".format(output_path))
 
+        # sqtl = pd.read_parquet(sqtl_path)
+        # sqtl.sample(frac=1).head(100000).to_parquet(sqtl_path.replace(".pcdarquet", "_lite.parquet"))
+        # exit()
+
+        sqtl_map_path = yaml["6_sQTLs"]["TMP"]["dext_sqtl_map"]
+
         if os.path.isfile(output_path) is True:
+
             dext["dext_down_reversed"] = dext["dext_down"] * -1
 
-            dext_percentiles = list(np.arange(0.5, 0.99, 0.05))
-            # dext_percentiles = [0.3, 0.5]
-            # dext_percentiles = [0]
-
-            # BINS NUMBER TO DISPLAY DISTRIBUTION
-            nb_bins = [3, 5, 10, 20]
-            # nb_bins = [3, 5]
+            # dext_percentiles = list(np.arange(0.5, 0.99, 0.05))
+            # dext_percentiles = [0.926, 0.9715]
+            dext_percentiles = [0.6]
+            nb_bins = [20]
+            # nb_bins = [3, 5, 10, 20]
 
             l = list()
 
-            # PRECOMPUTE BIN WINDOWS FOR ALL CONFIGS
-            l_bins = list()
-            for j, nb_bin in tqdm(enumerate(nb_bins), desc="Compute gene bins"):
-                dext_genes = dext[["Gene", "Gene_length", "Gene_start_38"]].drop_duplicates().reset_index(drop=True)
-                dext_genes = self.compute_bins(dext_genes, nb_bin)
-                if j == 0:
-                    l_cols = ["Gene", "Gene_bins"]
-                else:
-                    l_cols = ["Gene_bins"]
-                dext_genes = dext_genes[l_cols].rename({"Gene_bins": "Gene_bins_{}".format(str(nb_bin))}, axis=1)
-                l_bins.append(dext_genes)
-            # SMALL DF WITH ALL CONFIGS FOR EACH GENE
-            dext_genes = pd.concat(l_bins, axis=1)
-            print("CONFIGS done, reading sQTL file ...")
+            # dext_percentiles = [0.6]
 
-            # SQTL FILE
-            sqtl = pd.read_parquet(sqtl_path)
-            sqtl_lite = sqtl[
-                ["snpId", "Strand", "MAP", "Gene", "dext_up", "dext_down_reversed", "dext_tissues_up", "dext_tissues_down", "Tissue"]
-            ]
-            # print(sqtl_lite)
+            if os.path.isfile(sqtl_map_path) is False:
+                # BINS NUMBER TO DISPLAY DISTRIBUTION
 
-            sqtl_lite["snpIdTissue"] = sqtl_lite["snpId"] + "_" + sqtl_lite["Tissue"]
-            sqtl_lite = sqtl_lite.drop_duplicates(subset=["snpIdTissue", "MAP"])
-            # print(sqtl_lite)
+                # PRECOMPUTE BIN WINDOWS FOR ALL CONFIGS
+                l_bins = list()
+                for j, nb_bin in tqdm(enumerate(nb_bins), desc="Compute gene bins"):
+                    dext_genes = dext[["Gene", "Gene_length", "Gene_start_38"]].drop_duplicates().reset_index(drop=True)
+                    dext_genes = self.compute_bins(dext_genes, nb_bin)
+                    if j == 0:
+                        l_cols = ["Gene", "Gene_bins"]
+                    else:
+                        l_cols = ["Gene_bins"]
+                    dext_genes = dext_genes[l_cols].rename({"Gene_bins": "Gene_bins_{}".format(str(nb_bin))}, axis=1)
+                    l_bins.append(dext_genes)
+                # SMALL DF WITH ALL CONFIGS FOR EACH GENE
+                dext_genes = pd.concat(l_bins, axis=1)
+                print("CONFIGS done, reading sQTL file ...")
 
-            # MERGE WITH PREVIOUS & COMPUTE COLUMNS
-            print("Merging bins file with sQTL one ...")
+                # SQTL FILE
+                sqtl = pd.read_parquet(sqtl_path)
+                sqtl_lite = sqtl[
+                    ["snpId", "Strand", "MAP", "Gene", "dext_up", "dext_down_reversed", "dext_tissues_up", "dext_tissues_down", "Tissue"]
+                ]
+                # print(sqtl_lite)
 
-            sqtl_map = pd.merge(sqtl, dext_genes, on="Gene")
-            sqtl_map["snpId_POS"] = sqtl_map["snpId"].apply(lambda r: int(r.split("_")[1]))
+                sqtl_lite["snpIdTissue"] = sqtl_lite["snpId"] + "_" + sqtl_lite["Tissue"]
+                sqtl_lite = sqtl_lite.drop_duplicates(subset=["snpIdTissue", "MAP"])
+                # print(sqtl_lite)
 
-            # print(sqtl_map)
-            # exit()
+                # MERGE WITH PREVIOUS & COMPUTE COLUMNS
+                print("Merging bins file with sQTL one ...")
+
+                sqtl_map = pd.merge(sqtl, dext_genes, on="Gene")
+                sqtl_map["snpId_POS"] = sqtl_map["snpId"].apply(lambda r: int(r.split("_")[1]))
+
+                for j, nb_bin in tqdm(enumerate(nb_bins), desc="Compute sQTL bins"):
+
+                    sqtl_map["snpId_bin_{}".format(nb_bin)] = sqtl_map.parallel_apply(
+                        lambda r: self.compute_sqtl_bin_fct(r, nb_bin=nb_bin), axis=1
+                    )
+
+                sqtl_map.to_parquet(sqtl_map_path)
+
+                # exit()
+            else:
+                sqtl_map = pd.read_parquet(sqtl_map_path)
+
+            print(sqtl_map)
 
             # ITERATE OVER SCENARIOS
             for nb_bin in nb_bins:
 
-                sqtl_map["snpId_bin_{}".format(nb_bin)] = sqtl_map.parallel_apply(
-                    lambda r: self.compute_sqtl_bin_fct(r, nb_bin=nb_bin), axis=1
-                )
-
                 # ITERATE OVER OVER&UNDER EXPRESSED
                 for min_max in ["up", "down"]:
                     # for min_max in ["down"]:
-                    sqtl_map = sqtl_map.explode("dext_tissues_{}".format(min_max))
-                    sqtl_map.loc[sqtl_map["Tissue"] == sqtl_map["dext_tissues_{}".format(min_max)], "Match_tissue"] = True
-                    sqtl_map["Match_tissue"] = sqtl_map["Match_tissue"].fillna(False)
-                    # print(sqtl_map)
-                    # print(sqtl_map.Match_tissue.value_counts())
 
                     tmp_l = list()
 
@@ -454,22 +490,72 @@ class sQTL_location:
                         # print(match)
 
                         for prct in dext_percentiles:
-                            # print(match)
 
                             prct = round(prct, 2)
 
                             if min_max == "up":
 
-                                cutoff = round(dext["dext_{}".format(min_max)].quantile(prct), 2)
+                                # cutoff = round(dext["dext_{}".format(min_max)].quantile(prct), 2)
+                                cutoff = 0.5
+
+                                # diff_spec = list(
+                                # set(dext.loc[dext["dext_{}".format(min_max)] >= cutoff, "Gene"].unique().tolist()).difference(
+                                # set(dext.loc[dext["dext_{}".format(min_max)] < cutoff, "Gene"].unique().tolist())
+                                # )
+                                # )
+
                                 sqtl_map_tmp_cutoff = sqtl_map.loc[
-                                    (sqtl_map["dext_{}".format(min_max)] >= cutoff) & (sqtl_map["Match_tissue"] == match)
+                                    (sqtl_map["dext_{}".format(min_max)] >= cutoff)
+                                    # & (sqtl_map["Match_tissue"] == match)
+                                    # & (sqtl_map["Gene"].isin(diff_spec))
                                 ]
+                                print(sqtl_map_tmp_cutoff)
+
+                                sqtl_map_tmp_cutoff = sqtl_map_tmp_cutoff.explode("dext_tissues_{}".format(min_max))
+                                print(sqtl_map_tmp_cutoff)
+                                sqtl_map_tmp_cutoff.loc[
+                                    sqtl_map_tmp_cutoff["Tissue"] == sqtl_map_tmp_cutoff["dext_tissues_{}".format(min_max)], "Match_tissue"
+                                ] = True
+                                sqtl_map_tmp_cutoff["Match_tissue"] = sqtl_map_tmp_cutoff["Match_tissue"].fillna(False)
+
+                                sqtl_map_tmp_cutoff = sqtl_map_tmp_cutoff.loc[
+                                    # (sqtl_map_tmp_cutoff["dext_{}".format(min_max)] >= cutoff)
+                                    (sqtl_map_tmp_cutoff["Match_tissue"] == match)
+                                    # & (sqtl_map["Gene"].isin(diff_spec))
+                                ]
+                                print(sqtl_map_tmp_cutoff)
+                                # dext_tmp_cutoff = dext.loc[(dext["dext_{}".format(min_max)] >= cutoff) & (dext["Gene"].isin(diff_spec))]
 
                             elif min_max == "down":
-                                cutoff = round(dext["dext_{}_reversed".format(min_max)].quantile(prct), 2)
+
+                                # cutoff = round(dext["dext_{}".format(min_max)].quantile(prct), 2)
+                                # cutoff = 0.5
+
+                                # diff_spec = list(
+                                # set(dext.loc[dext["dext_{}_reversed".format(min_max)] >= cutoff, "Gene"].unique().tolist()).difference(
+                                # set(dext.loc[dext["dext_{}_reversed".format(min_max)] < cutoff, "Gene"].unique().tolist())
+                                # )
+                                # )
+
                                 sqtl_map_tmp_cutoff = sqtl_map.loc[
-                                    (sqtl_map["dext_{}_reversed".format(min_max)] >= cutoff) & (sqtl_map["Match_tissue"] == match)
+                                    (sqtl_map["dext_{}_reversed".format(min_max)] >= cutoff)
+                                    # & (sqtl_map["Match_tissue"] == match)
+                                    # & (sqtl_map["Gene"].isin(diff_spec))
                                 ]
+
+                                sqtl_map_tmp_cutoff = sqtl_map_tmp_cutoff.explode("dext_tissues_{}".format(min_max))
+
+                                sqtl_map_tmp_cutoff.loc[
+                                    sqtl_map_tmp_cutoff["Tissue"] == sqtl_map_tmp_cutoff["dext_tissues_{}".format(min_max)], "Match_tissue"
+                                ] = True
+                                sqtl_map_tmp_cutoff["Match_tissue"] = sqtl_map_tmp_cutoff["Match_tissue"].fillna(False)
+
+                                sqtl_map_tmp_cutoff = sqtl_map_tmp_cutoff.loc[
+                                    # (sqtl_map_tmp_cutoff["dext_{}".format(min_max)] >= cutoff)
+                                    (sqtl_map_tmp_cutoff["Match_tissue"] == match)
+                                    # & (sqtl_map["Gene"].isin(diff_spec))
+                                ]
+                                # dext_tmp_cutoff = dext.loc[(dext["dext_{}".format(min_max)] >= cutoff) & (dext["Gene"].isin(diff_spec))]
 
                             print(
                                 "Nb bin : {}, Up/Down : {}, Top prct diff : {}, Cutoff associated : {}, Tissue match : {}".format(
@@ -490,14 +576,15 @@ class sQTL_location:
                                         ]
                                     )
                                 ).items()
-                                if v > nb_bin
+                                # if v > nb_bin
                             }
-                            # print(tmp_d)
+                            print(tmp_d)
 
                             # REFORMAT & ADD DF TO LIST
                             tmp_d = [[v if int(e) == 1 else 0 for e in k.split(",")] for k, v in tmp_d.items()]
 
                             tmp_df = pd.DataFrame(tmp_d)
+                            print(tmp_df)
                             tmp_df.loc["Total"] = tmp_df.sum(axis=0)
                             tmp_df.loc["Ratio"] = 100 * (tmp_df.loc["Total"] / tmp_df.loc["Total"].sum())
                             # print(tmp_df)

@@ -35,31 +35,20 @@ class CorrectExpression:
 
         if os.path.isfile(path) is False:
             # * 1 Correction by expression
-            gtex_corrected = self.launch(yaml["2_EXPRESSION"]["Final"]["transcript_check_refseq_test"])
+            gtex_corrected = self.launch(yaml["2_EXPRESSION"]["Final"]["transcript_check_refseq"])
 
             # * 2 Load RefSeq & remove genes with transcript identical on CDS
-            refseq = pd.read_parquet(yaml["1_GENOMICS"]["Final"]["refseq_cds_with_variable"])
-            utrs = pd.read_parquet(yaml["1_GENOMICS"]["Final"]["refseq_miso_utrs"])
+            refseq = pd.read_parquet("/gstock/EXOTIC/data/GENOMICS/refseq_37_processed_cds_variable.parquet")
+            utrs = pd.read_parquet("/gstock/EXOTIC/data/GENOMICS/refseq_37_processed_utrs_analysis.parquet")
             refseq = refseq.loc[~refseq["Gene"].isin(utrs.loc[utrs["Nb_combi"] == 1])]
 
             # * 3 Remove unexpressed transcripts & recompute frequencies & usage
             refseq_correct_mrnas = self.correct_refseq_by_expression(
-                yaml["2_EXPRESSION"]["Final"]["refseq_corrected_cds_with_variable_test"], refseq, gtex_corrected
+                yaml["2_EXPRESSION"]["Final"]["refseq_corrected_cds_with_variable"], refseq, gtex_corrected
             )
-            tmp = refseq_correct_mrnas.explode("mRNA_exons")
-            print(tmp.Gene.nunique())
-            print(tmp.mRNA_exons.nunique())
-
             self.final_corrected_refseq = self.process_corrected_file(path, refseq_correct_mrnas)
-            tmp = self.final_corrected_refseq.explode("mRNA_exons")
-            print(tmp.Gene.nunique())
-            print(tmp.mRNA_exons.nunique())
-
         else:
             self.final_corrected_refseq = pd.read_parquet(path)
-            tmp = self.final_corrected_refseq.explode("mRNA_exons")
-            print(tmp.Gene.nunique())
-            print(tmp.mRNA_exons.nunique())
             print(self.final_corrected_refseq)
 
     def launch(self, path):
@@ -72,12 +61,11 @@ class CorrectExpression:
             merge_check = self.merge_check_files(
                 path_gtex_reads=yaml["2_EXPRESSION"]["External"]["transcript_reads"],
                 path_gtex_tpm=yaml["2_EXPRESSION"]["External"]["transcript_tpm"],
-                biomart_path=yaml["1_GENOMICS"]["External"]["biomart_37"],
+                biomart_path=yaml["1_GENOMICS"]["External"]["biomart"],
             )
 
             # ADD COLUMNS
             merge_check["transcript_id"] = merge_check["transcript_id"].apply(lambda r: r.split(".")[0])
-            biomart_grch37 = self.load_biomart(path=yaml["1_GENOMICS"]["External"]["biomart_37"])
             merge_check = pd.merge(biomart_grch37, merge_check, on="transcript_id")
 
             # RETRIEVED TRUE & IN REFSEQ
@@ -89,7 +77,6 @@ class CorrectExpression:
             print("# Files exist ✓, Loading ... ")
 
             merge_check = pd.read_csv(path, compression="gzip", sep="\t")
-            print(merge_check)
         return merge_check
 
     @staticmethod
@@ -102,18 +89,18 @@ class CorrectExpression:
             [
                 "Transcript stable ID",
                 "Transcript type",
-                # "APPRIS annotation",
+                "APPRIS annotation",
                 "RefSeq mRNA ID",
-                # "Transcript support level (TSL)",
+                "Transcript support level (TSL)",
             ]
         ]
 
         biomart_grch37.columns = [
             "transcript_id",
             "transcript_biotype",
-            # "APPRIS",
+            "APPRIS",
             "RefSeq_mRNAID",
-            # "TSL",
+            "TSL",
         ]
 
         return biomart_grch37
@@ -185,8 +172,8 @@ class CorrectExpression:
         if os.path.isfile(yaml["2_EXPRESSION"]["Final"]["transcript_check"]) is False:
 
             # CHECK GTEx FILES TO RETRIEVE TRANSCRIPTS PASSING CUTOFFS
-            check_reads_file = self.check_file(path_gtex_reads, biomart_path)
-            check_tpm_file = self.check_file(path_gtex_tpm, biomart_path)
+            check_reads_file = self.check_file(path_gtex_reads)
+            check_tpm_file = self.check_file(path_gtex_tpm)
 
             # MERGE FILES
             merge_check = pd.merge(
@@ -327,6 +314,6 @@ class CorrectExpression:
 
 
 if __name__ == "__main__":
-    c = CorrectExpression(yaml["2_EXPRESSION"]["Final"]["refseq_corrected_cds_recomputed_test"])
+    c = CorrectExpression(yaml["2_EXPRESSION"]["Final"]["refseq_corrected_cds_recomputed"])
     df = c.final_corrected_refseq
     print(df.loc[df["Share"] == True])

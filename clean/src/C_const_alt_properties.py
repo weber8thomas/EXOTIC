@@ -56,18 +56,20 @@ class Variants_CCRS:
         #     bed_path=yaml["3_EXONS_PROPERTIES"]["TMP"]["refseq_bed"],
         # )
 
-        # gnomad_data = self.read_gnomad_ht_file(
-        #     bed_path=yaml["3_EXONS_PROPERTIES"]["TMP"]["refseq_bed"],
-        #     gnomad_path_ht=yaml["3_EXONS_PROPERTIES"]["External"]["gnomad_2_1_1"],
-        #     output_file=yaml["3_EXONS_PROPERTIES"]["Final"]["refseq_gnomad_hail_retrieved"],
-        # )
+        gnomad_data = self.read_gnomad_ht_file(
+            bed_path=yaml["3_EXONS_PROPERTIES"]["TMP"]["refseq_bed"],
+            gnomad_path_ht=yaml["3_EXONS_PROPERTIES"]["External"]["gnomad_2_1_1"],
+            output_file=yaml["3_EXONS_PROPERTIES"]["Final"]["refseq_gnomad_hail_retrieved"],
+        )
         # print(gnomad_data)
 
-        # clinvar_data = self.read_and_process_clinvar_vcf(
-        # bed_path=yaml["3_EXONS_PROPERTIES"]["TMP"]["refseq_bed"],
-        # clinvar_vcf_path=yaml["3_EXONS_PROPERTIES"]["External"]["clinvar_latest"],
-        # output_file=yaml["3_EXONS_PROPERTIES"]["Final"]["refseq_clinvar_hail_retrieved"],
-        # )
+        clinvar_data = self.read_and_process_clinvar_vcf(
+            bed_path=yaml["3_EXONS_PROPERTIES"]["TMP"]["refseq_bed"],
+            clinvar_vcf_path=yaml["3_EXONS_PROPERTIES"]["External"]["clinvar_latest"],
+            output_file=yaml["3_EXONS_PROPERTIES"]["Final"]["refseq_clinvar_hail_retrieved"],
+            gnomad=gnomad_data,
+        )
+        exit()
 
         # print(clinvar_data)
 
@@ -180,10 +182,10 @@ class Variants_CCRS:
         # data_lite = data_lite.key_by('id')
 
     @staticmethod
-    def read_and_process_clinvar_vcf(bed_path, clinvar_vcf_path, output_file):
+    def read_and_process_clinvar_vcf(bed_path, clinvar_vcf_path, output_file, gnomad):
         print("# Load ClinVar VCF, build ht + pandas & retrieve corresponding variations / File : {}".format(output_file))
 
-        if os.path.isfile(output_file) is False:
+        if os.path.isfile(output_file) is True:
 
             clinvar_review_status = {
                 "practice_guideline": 4,
@@ -198,10 +200,13 @@ class Variants_CCRS:
 
             bed_file = hl.import_bed(bed_path, reference_genome="GRCh37")
 
-            hl.import_vcf(clinvar_vcf_path, force_bgz=True).write(clinvar_vcf_path.replace(".vcf.gz", ".ht"), overwrite=True)
+            hl.import_vcf(clinvar_vcf_path, force_bgz=True).write(clinvar_vcf_path.replace(".vcf.gz", ".ht"))
             clinvar = hl.read_matrix_table("/gstock/biolo_datasets/variation/variation_sets/clinvar/vcf_GRCh37/v2/clinvar_20210123.ht")
             clinvar_lite = clinvar.filter_rows(hl.is_defined(bed_file[clinvar.locus]))
+            # print(clinvar_lite.count())
+
             clinvar_lite = clinvar_lite.filter_rows(clinvar_lite.info.CLNVC == "single_nucleotide_variant")
+            # print(clinvar_lite.count())
             clinvar_lite = clinvar_lite.select_rows(
                 clinvar_lite.rsid,
                 clinvar_lite.info.ALLELEID,
@@ -209,6 +214,7 @@ class Variants_CCRS:
                 clinvar_lite.info.CLNSIG,
                 clinvar_lite.info.GENEINFO,
                 clinvar_lite.info.RS,
+                clinvar_lite.info.CLNVI,
             )
 
             clinvar_lite = clinvar_lite.annotate_rows(
@@ -219,7 +225,10 @@ class Variants_CCRS:
             clinvar_lite_pd_raw = clinvar_lite.make_table().to_pandas()
             clinvar_lite_pd = clinvar_lite_pd_raw.copy()
             clinvar_lite_pd = clinvar_lite_pd.replace(to_replace="None", value=np.nan)
+
+            # print("0", clinvar_lite_pd.shape[0], clinvar_lite_pd.Gene.nunique())
             clinvar_lite_pd = clinvar_lite_pd.dropna(subset=["ALLELEID", "CLNREVSTAT", "CLNSIG", "GENEINFO"], how="any")
+            # print("1", clinvar_lite_pd.shape[0], clinvar_lite_pd.Gene.nunique())
             clinvar_lite_pd["CLNREVSTAT"] = clinvar_lite_pd["CLNREVSTAT"].apply(lambda r: ",".join(r))
             clinvar_lite_pd["CLNSIG"] = clinvar_lite_pd["CLNSIG"].apply(lambda r: ",".join(r))
             clinvar_lite_pd["RS_STARS"] = clinvar_lite_pd["CLNREVSTAT"].map(clinvar_review_status)
@@ -227,10 +236,27 @@ class Variants_CCRS:
                 (clinvar_lite_pd["CLNSIG"].str.contains("athogenic"))
                 & (~clinvar_lite_pd["CLNSIG"].str.contains("Conflicting_interpretations_of_pathogenicity"))
             ]
+            # print("2", clinvar_lite_pd.shape[0], clinvar_lite_pd.Gene.nunique())
             clinvar_lite_pd = clinvar_lite_pd.loc[~clinvar_lite_pd["CLNREVSTAT"].str.contains("interpret")]
+            # print("3", clinvar_lite_pd.shape[0], clinvar_lite_pd.Gene.nunique())
+
+            clinvar_lite_pd["snpId"] = (
+                clinvar_lite_pd["locus.contig"].astype(str)
+                + "_"
+                + clinvar_lite_pd["locus.position"].astype(str)
+                + "_"
+                + clinvar_lite_pd["alleles"].apply(lambda r: r[0])
+                + "_"
+                + clinvar_lite_pd["alleles"].apply(lambda r: r[1])
+            )
+            gnomad = pd.read_parquet("/gstock/EXOTIC/data/EXON_PROPERTIES/refseq_miso_gnomad_variations.parquet")
+            clinvar_lite_pd = clinvar_lite_pd.loc[~clinvar_lite_pd["snpId"].isin(gnomad.id.values.tolist())]
+
             clinvar_lite_pd.to_parquet(output_file)
         else:
             clinvar_lite_pd = pd.read_parquet(output_file)
+
+        print(clinvar_lite_pd)
         return clinvar_lite_pd
 
     def read_and_process_ccr(
