@@ -1,3 +1,4 @@
 {
-    "python.pythonPath": "/home/weber/.conda/envs/ExoCarto/bin/python"
+    "python.pythonPath": "/home/weber/.conda/envs/ExoCarto/bin/python",
+    "jupyter.jupyterServerType": "local"
 }

@@ -387,14 +387,14 @@ class HandleExonExpression:
         merge["utrs"] = merge.apply(lambda r: list(sorted(list(set(r["exons_ranges"]).difference(set(r["cds_ranges"]))))), axis=1)
         merge = merge.explode("utrs")
 
-        # dext = dext.loc[(dext["dext_up"] > 0.5) | (dext["dext_down"] < -0.5)]
+        dext = dext.loc[(dext["dext_up"] > 0.5) | (dext["dext_down"] < -0.5)]
 
         dext = dext.explode("mRNA_exons")
         merge_dext = pd.merge(dext[["Gene", "mRNA_exons", "ranges"]].rename({"mRNA_exons": "mRNA"}, axis=1), merge, on=["Gene", "mRNA"])
 
         # merge_dext = merge_dext.dropna(subset=["utrs"])
         merge["utrs"] = merge["utrs"].astype(str)
-        print(merge_dext)
+        # print(merge_dext)
 
         def categorize_utr(r):
             alt_start = r["ranges"].split("-")[0]
@@ -414,8 +414,10 @@ class HandleExonExpression:
 
         merge_dext = merge_dext.parallel_apply(categorize_utr, axis=1)
         print(merge_dext)
+
         print(merge_dext["Gene"].nunique())
         print(merge_dext["mRNA"].nunique())
+        print(merge_dext["ranges"].nunique())
 
         print(merge_dext[["Gene", "mRNA", "3_prime"]].drop_duplicates().dropna())
         print(merge_dext[["Gene", "mRNA", "5_prime"]].drop_duplicates().dropna())
@@ -423,10 +425,11 @@ class HandleExonExpression:
 
         tmp_gb = merge_dext.groupby(["Gene", "mRNA"])["utr_bound"].value_counts()
         print(tmp_gb)
+        print(tmp_gb.sum())
         print(tmp_gb.groupby("utr_bound").sum())
         tmp_gb.name = "Count"
-        print(tmp_gb.reset_index().Gene.nunique())
-        print(tmp_gb.reset_index().mRNA.nunique())
+        # print(tmp_gb.reset_index().Gene.nunique())
+        # print(tmp_gb.reset_index().mRNA.nunique())
 
         # print(merge_dext["3_prime"].nunique())
         # print(merge_dext["5_prime"].nunique())

@@ -45,8 +45,12 @@ dicts = json.load(open("clean/src/config/EXOTIC_config.json"))
 class LocationDev:
     def __init__(self):
 
+        self.cluspack("/home/weber/Documents/test.txt", "kmeans", "dpc")
+
         refseq = self.refseq_stats_distribution_old(refseq_path=yaml["1_GENOMICS"]["Final"]["refseq_cds_with_variable"])
-        refseq = self.process_refseq_to_get_complete_exons(path="/gstock/EXOTIC/data/GENOMICS/RefSeq_exons_simple.parquet", refseq=refseq)
+        refseq = self.process_refseq_to_get_complete_exons(
+            path="/gstock/EXOTIC/data/GENOMICS/RefSeq_exons_simple_mrnas.parquet", refseq=refseq
+        )
         # self.stats_introns(refseq)
         exit()
 
@@ -149,7 +153,9 @@ class LocationDev:
 
         for j, r in tmp_gene_df.iterrows():
             if r["Share"] is True:
-                if r["End"] == previous_start:
+                # print(previous_start, previous_end, r["Start"], r["End"])
+                if previous_end == int(r["Start"]):
+                    # print("OK", previous_start, previous_end, r["Start"], r["End"])
                     exons_ranges.append("{}-{}".format(previous_start, r["End"]))
             elif int(r["ranges"].split("-")[0]) > previous_end:
                 # else:
@@ -157,18 +163,29 @@ class LocationDev:
 
             previous_start = int(r["Start"])
             previous_end = int(r["End"])
+        # print(exons_ranges)
+        # exit()
         return exons_ranges
 
     def process_refseq_to_get_complete_exons(self, path, refseq):
 
-        if os.path.isfile(path) is True:
+        if os.path.isfile(path) is False:
             refseq = refseq.sort_values(by=["Gene", "Start"])
-            # refseq = refseq.loc[refseq["Gene"] == "ZCWPW1"]
+
+            # refseq = refseq.loc[refseq["Gene"] == "AASDH"]
+            # print(refseq)
+            # exit()
 
             l = list()
 
-            df = pd.DataFrame(refseq.groupby("Gene").parallel_apply(lambda r: self.groupby_apply(r))).reset_index()
-            df.columns = ["Gene", "Exons_ranges"]
+            refseq = refseq.explode("mRNA_exons")
+            refseq = refseq.sort_values(by=["Gene", "mRNA_exons", "Start"])
+            refseq_genes = refseq[["Gene", "mRNA_exons"]].drop_duplicates()
+
+            df = pd.DataFrame(refseq.groupby("mRNA_exons").parallel_apply(lambda r: self.groupby_apply(r))).reset_index()
+            print(df)
+            df.columns = ["mRNA_exons", "Exons_ranges"]
+            df = pd.merge(refseq_genes, df, on="mRNA_exons")
 
             df = df.parallel_apply(self.compute_introns_ranges, axis=1)
 
@@ -178,10 +195,13 @@ class LocationDev:
                 on="Gene",
             )
 
+            print(df)
+
             df["CDS_count"] = df["Exons_ranges"].str.len()
 
             df = df.parallel_apply(lambda r: self.shift_according_to_strand(r, col="Exons_ranges"), axis=1)
             df = df.parallel_apply(lambda r: self.shift_according_to_strand(r, col="Introns_ranges"), axis=1)
+            print(df)
 
             df.to_parquet(path)
         else:
@@ -189,6 +209,43 @@ class LocationDev:
         print(df)
 
         return df
+
+    @staticmethod
+    def cluspack(intput_file, cm, nbc):
+        output_file_path = intput_file.split(".")[0] + ".clu"
+
+        if os.path.isfile(output_file_path) is False:
+            args = [
+                "/biolo/cluspack/binNew/cluspack",
+                intput_file,
+                "-dt=coordinates",
+                "-cm={}".format(cm),
+                "-nbc={}".format(nbc),
+                "-wc",
+                "-oclu",
+            ]
+            p1 = subprocess.Popen(args)
+            p1.wait()
+
+        else:
+            d_stats = collections.defaultdict(dict)
+            output_file = open(output_file_path, "r").readlines()
+            nb_clusters = int(output_file[0].strip().split(" : ")[1])
+            cluster = 0
+            for line in output_file[1:]:
+                line = line.strip()
+                if line:
+                    if "Cluster" in line:
+                        cluster = int(line.split(" ; ")[0].replace("Cluster ", ""))
+                        size = int(line.split(" ; ")[1].replace("size=", ""))
+                        d_stats[cluster]["Size"] = size
+                        d_stats[cluster]["Indexes"] = list()
+                    else:
+                        d_stats[cluster]["Indexes"].append(int(line))
+            cluspack_df = pd.DataFrame.from_dict(d_stats).T.reset_index().rename({"index": "cluster"}, axis=1)
+            print(cluspack_df)
+            exit()
+            return cluspack_df
 
     @staticmethod
     def refseq_stats_distribution_old(refseq_path):
@@ -281,11 +338,17 @@ class LocationDev:
     @staticmethod
     def compute_introns_ranges(r):
         l = list()
+        # print(r)
         exons = r["Exons_ranges"]
         # print(exons)
-        exons = list(sorted([int(sub_e) for e in exons for sub_e in e.split("-")]))
+        exons_start = list(sorted([e.split("-")[0] for e in exons]))
+        exons_end = list(sorted([e.split("-")[1] for e in exons]))
+        exons = ["{}-{}".format(s, e) for s, e in zip(exons_start, exons_end)]
+
         # print(exons)
-        exons = ["{}-{}".format(e, exons[j + 1]) for j, e in enumerate(exons) if j < len(exons) - 1 if j % 2 == 0]
+        # exons = list(sorted([int(sub_e) for e in exons for sub_e in e.split("-")]))
+        # print(exons)
+        # exons = ["{}-{}".format(e, exons[j + 1]) for j, e in enumerate(exons) if j < len(exons) - 1 if j % 2 == 0]
         # print(exons)
         # print(len(exons))
 
@@ -297,7 +360,13 @@ class LocationDev:
                 l.append(int(e.split("-")[1]) + 1)
             elif j == len(exons) - 1:
                 l.append(int(e.split("-")[0]) - 1)
+        # print(l)
         l = ["{}-{}".format(e, l[j + 1]) for j, e in enumerate(l) if j < len(l) - 1 if j % 2 == 0]
+        # print(l)
+        # exit()
+        # introns_start = list(sorted([e.split("-")[0] for e in l]))
+        # introns_end = list(sorted([e.split("-")[1] for e in l]))
+        # introns = ["{}-{}".format(s, e) for s, e in zip(introns_start, introns_end)]
         r["Introns_ranges"] = l
         # print(l)
         # print(len(l))
