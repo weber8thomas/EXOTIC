@@ -1,6 +1,7 @@
 # General imports
 import os
 import sys
+from scipy.stats import fisher_exact
 import pandas as pd
 
 pd.options.mode.chained_assignment = None  # default='warn'
@@ -36,7 +37,7 @@ import matplotlib.ticker as mtick
 from statannot import add_stat_annotation
 import matplotlib.font_manager as font_manager
 
-plt.rcParams.update({"font.size": 17})
+plt.rcParams.update({"font.size": 30})
 
 # Font settings
 font_dirs = [
@@ -71,18 +72,21 @@ class IntronStats:
         import multiprocessing
         import parmap
 
-        conditions = ["Miso", "dext", "dext_down", "dext_up"]
-        # conditions = ["dext_up"]
+        # conditions = ["Miso", "dext", "dext_down", "dext_up"]
+        conditions = ["Miso"]
         keys = list(range(3, 31))
         # keys = list(range(3, 31))[:5]
+        # signs = [">=", "=="]
+        signs = ["=="]
 
         m = multiprocessing.Manager()
 
         # l_clusters_df = list()
         # l_fold_df = list()
         cluster_nb = 4
-        signs = [">=", "=="]
-        # signs = ["=="]
+        # seeds = list(range(0, 10))
+        seeds = [2]
+
         self.convert_sign = {">=": "supequal", "==": "equal"}
 
         # for sign in signs:
@@ -94,77 +98,91 @@ class IntronStats:
         #             l_clusters_df.append(cluster_centers)
         #             l_fold_df.append(gb)
 
-        for sign in signs:
-            l_clusters_df = m.list()
-            l_fold_df = m.list()
-            l_df = m.list()
-            l_gene_df = m.list()
-            for condition in conditions:
-                df_raw = self.prepare_file_based_on_condition(df_raw_raw, condition)
-                print(sign, condition)
-                # print(df_raw_raw[condition].value_counts())
-                # print(df_raw[condition].value_counts())
-                # for intron in tqdm(keys):
-                parmap.starmap(
-                    self.test,
-                    list(zip(keys)),
-                    df_raw,
-                    condition,
-                    sign,
-                    cluster_nb,
-                    l_clusters_df,
-                    l_fold_df,
-                    l_df,
-                    # l_gene_df,
-                    df_raw_raw,
-                    pm_pbar=True,
+        for seed in seeds:
+            for sign in signs:
+                l_clusters_df = m.list()
+                l_fold_df = m.list()
+                l_df = m.list()
+                l_gene_df = m.list()
+                for condition in conditions:
+                    df_raw = self.prepare_file_based_on_condition(df_raw_raw, condition)
+                    print(sign, condition)
+                    # print(df_raw_raw[condition].value_counts())
+                    # print(df_raw[condition].value_counts())
+                    # for intron in tqdm(keys):
+                    parmap.starmap(
+                        self.test,
+                        list(zip(keys)),
+                        # intron,
+                        df_raw,
+                        condition,
+                        sign,
+                        cluster_nb,
+                        l_clusters_df,
+                        l_fold_df,
+                        l_df,
+                        # l_gene_df,
+                        df_raw_raw,
+                        seed,
+                        pm_pbar=True,
+                    )
+                l_clusters_df = list(l_clusters_df)
+                l_fold_df = list(l_fold_df)
+                # print(l_clusters_df)
+                l_df = list(l_df)
+
+                concat_density, index_df = self.concat_mass_centers(
+                    l_clusters_df, conditions, "/gstock/EXOTIC/data/CLUSTERING/tmp.xlsx", keys, cluster_nb
                 )
+                concat_stats = self.concat_stats(l_fold_df, conditions, "/gstock/EXOTIC/data/CLUSTERING/tmp2.xlsx", keys, cluster_nb)
+                map_d = self.dict_new_clusters(index_df, keys, cluster_nb)
+                # pprint(map_d)
 
-            l_clusters_df = list(l_clusters_df)
-            l_fold_df = list(l_fold_df)
-            l_df = list(l_df)
+                concat = pd.concat(l_df)
+                concat["cluster_new"] = concat["id"].map(map_d)
+                # concat["cluster_new"] = concat["cluster_new"].astype(int)
+                concat["Condition"] = concat["id"].apply(lambda r: r.split("-")[0])
+                tmp_data_genes_clustering = concat[["Introns_nb", "Miso", "cluster_new", "Gene"]].sort_values(
+                    by=["Introns_nb", "Miso", "cluster_new", "Gene"]
+                )
+                print(tmp_data_genes_clustering)
+                tmp_data_genes_clustering.to_excel(
+                    "/gstock/EXOTIC/data/CLUSTERING/data_genes_clustering_{}.xlsx".format(self.convert_sign[sign], index=False)
+                )
+                # exit()
+                # print(concat)
+                tmp_concat_l = list()
+                for condition in concat.Condition.unique():
+                    tmp_concat_l.append(concat.loc[(concat["Condition"] == condition) & (concat[condition] == "True")])
+                concat = pd.concat(tmp_concat_l)
 
-            concat_density, index_df = self.concat_mass_centers(
-                l_clusters_df, conditions, "/gstock/EXOTIC/data/CLUSTERING/tmp.xlsx", keys, cluster_nb
-            )
-            concat_stats = self.concat_stats(l_fold_df, conditions, "/gstock/EXOTIC/data/CLUSTERING/tmp2.xlsx", keys, cluster_nb)
-            map_d = self.dict_new_clusters(index_df, keys, cluster_nb)
-            pprint(map_d)
+                # print(concat)
+                concat_gb = concat.groupby(["Condition", "cluster_new", "Introns_nb"])["Gene"].apply(list)
+                # print(concat_gb)
 
-            concat = pd.concat(l_df)
-            concat["cluster_new"] = concat["id"].map(map_d)
-            # concat["cluster_new"] = concat["cluster_new"].astype(int)
-            concat["Condition"] = concat["id"].apply(lambda r: r.split("-")[0])
-            # print(concat)
-            tmp_concat_l = list()
-            for condition in concat.Condition.unique():
-                tmp_concat_l.append(concat.loc[(concat["Condition"] == condition) & (concat[condition] == "True")])
-            concat = pd.concat(tmp_concat_l)
+                data_barplot = self.data_barplot(concat_stats, keys, cluster_nb).reset_index()
+                data_profiles = self.data_profiles(map_d, concat_density, keys, cluster_nb)
+                # print(data_profiles)
+                # exit()
+                data_heatmap = self.fold_reordered(map_d, concat_stats, keys, cluster_nb)
 
-            print(concat)
-            concat = concat.groupby(["Condition", "cluster_new", "Introns_nb"])["Gene"].apply(list)
-            print(concat)
+                data_barplot.to_excel("/gstock/EXOTIC/data/CLUSTERING/data_barplot_{}.xlsx".format(self.convert_sign[sign]), index=False)
+                data_profiles.to_excel("/gstock/EXOTIC/data/CLUSTERING/data_profiles_{}.xlsx".format(self.convert_sign[sign]), index=False)
+                data_heatmap.reset_index().to_excel(
+                    "/gstock/EXOTIC/data/CLUSTERING/data_heatmap_{}.xlsx".format(self.convert_sign[sign]), index=False
+                )
+                concat_gb.to_excel("/gstock/EXOTIC/data/CLUSTERING/data_genes_{}.xlsx".format(self.convert_sign[sign]), index=True)
+                # print(data_profiles)
+                # print(data_heatmap)
+                # print(concat_density)
+                # print(data_heatmap.fillna(100).reset_index().drop(["Introns_nb"], axis=1).groupby("Condition").describe().T)
+                self.launch_heatmap(df_raw, data_heatmap, data_barplot, data_profiles, concat_stats, conditions, keys, sign, seed)
 
-            data_barplot = self.data_barplot(concat_stats, keys, cluster_nb).reset_index()
-            data_profiles = self.data_profiles(map_d, concat_density, keys, cluster_nb).reset_index()
-            data_heatmap = self.fold_reordered(map_d, concat_stats, keys, cluster_nb)
-
-            # print(data_barplot)
-            data_barplot.to_excel("/gstock/EXOTIC/data/CLUSTERING/data_barplot_{}.xlsx".format(self.convert_sign[sign]), index=False)
-            data_profiles.to_excel("/gstock/EXOTIC/data/CLUSTERING/data_profiles_{}.xlsx".format(self.convert_sign[sign]), index=False)
-            data_heatmap.reset_index().to_excel(
-                "/gstock/EXOTIC/data/CLUSTERING/data_heatmap_{}.xlsx".format(self.convert_sign[sign]), index=False
-            )
-            concat.to_excel("/gstock/EXOTIC/data/CLUSTERING/data_genes_{}.xlsx".format(self.convert_sign[sign]), index=True)
-            # print(data_profiles)
-            # print(data_heatmap)
-            # print(concat_density)
-            # print(data_heatmap.fillna(100).reset_index().drop(["Introns_nb"], axis=1).groupby("Condition").describe().T)
-            self.launch_heatmap(data_heatmap, data_barplot, data_profiles, conditions, keys, sign)
-
-    def test(self, intron, df_raw, condition, sign, cluster_nb, l_clusters_df, l_fold_df, l_df, df_raw_raw):
+    def test(self, intron, df_raw, condition, sign, cluster_nb, l_clusters_df, l_fold_df, l_df, df_raw_raw, seed):
         X, df = self.launch_intron(df_raw, intron, condition, sign=sign)
-        cluster_centers, gb, df = self.clustering(X, df, cluster_nb, intron, condition, df_raw, df_raw_raw)
+        cluster_centers, gb, df = self.clustering(X, df, cluster_nb, intron, condition, df_raw, df_raw_raw, seed)
+        # print(intron, df.shape, df[condition].value_counts().to_dict(), gb, cluster_centers)
+
         l_clusters_df.append(cluster_centers)
         l_fold_df.append(gb)
         l_df.append(df)
@@ -211,28 +229,36 @@ class IntronStats:
         elif sign == ">=":
             df = df_raw.loc[(df_raw["Introns_nb"] >= k)]
 
+        # print(k, df.shape, df[condition].value_counts().to_dict())
+
         # CONVERT TO RATIO & SELECT FIRST ONES
         df["Introns_lengths_ratio"] = df["Introns_lengths"].apply(
             lambda r: pd.Series(pd.Series(r) / pd.Series(r).sum()).round(2).values.tolist()
         )
+        # df["Introns_lengths_ratio"] = df["Introns_lengths"].apply(lambda r: pd.Series(r).values.tolist())
+
         df["Introns_lengths_ratio"] = df["Introns_lengths_ratio"].apply(lambda r: r[:k])
+        # print(df)
 
         # REINDEX & COUNT
         df = df.reset_index(drop=True)
-        # print(df[condition].value_counts())
 
         x = "Introns_lengths_ratio"
         X_raw = pd.DataFrame.from_records(df[x])
         return X_raw, df
 
     @staticmethod
-    def clustering(X_raw, df, cluster, intron, condition, df_raw, df_raw_raw):
+    def clustering(X_raw, df, cluster, intron, condition, df_raw, df_raw_raw, seed):
         # CLUSTERING
         X = X_raw.copy()
-        km = KMeans(n_clusters=cluster)
+        km = KMeans(n_clusters=cluster, random_state=seed)
         km.fit(X.values)
         cluster_centers = km.cluster_centers_
         cluster_centers = [[round(sub_e, 2) for sub_e in e] for e in cluster_centers]
+        cluster_centers = pd.DataFrame.from_records(cluster_centers)
+        cluster_centers["Condition"] = condition
+        cluster_centers["Introns_nb"] = intron
+
         # l_clusters_df.append(cluster_centers)
 
         cluster_map = pd.DataFrame()
@@ -265,14 +291,27 @@ class IntronStats:
         gb["False"] = 100 * (gb["False_raw"] / df_raw[condition].value_counts().loc[False])
         gb["True"] = 100 * (gb["True_raw"] / df_raw[condition].value_counts().loc[True])
 
-        gb["Ratio"] = gb["True"] / gb["False"]
+        # gb["Ratio"] = gb["True"] / gb["False"]
+        gb["Ratio"] = gb["True_raw"] / gb["False_raw"]
+        df_raw_condition_count = df_raw[condition].value_counts().to_dict()
+        ref_ratio = df_raw_condition_count[True] / df_raw_condition_count[False]
+        gb["Ref_Ratio"] = ref_ratio
+
+        # gb["Fold"] = gb["Ratio"] / gb["Ref_Ratio"]
         gb["Fold"] = gb["Ratio"] / gb.loc["Sum"]["Ratio"]
+        gb["Fold"] = gb["Fold"] - 1
 
         gb["Total"] = gb["False"] + gb["True"]
 
         # l_fold_df.append(gb)
 
+        gb["Introns_nb"] = intron
+        gb["Condition"] = condition
+
         gb = gb.drop("Sum").reset_index(drop=True)
+
+        # print(condition)
+        # print(gb)
 
         return cluster_centers, gb, X
 
@@ -321,13 +360,16 @@ class IntronStats:
             # Mass centers
             l = list()
             j = 0
-            for i, e in enumerate(l_clusters_df):
-                tmp_df_to_add = pd.DataFrame.from_records(e)
-                l.append(tmp_df_to_add)
-            concat = pd.concat(l)
-            concat["Condition"] = [sub_e for e in conditions for sub_e in [e] * (len(keys) * cluster_nb)]
+            # for i, e in enumerate(l_clusters_df):
+            #     tmp_df_to_add = pd.DataFrame.from_records(e)
+            #     l.append(tmp_df_to_add)
+            concat = pd.concat(l_clusters_df)
+            # concat["Condition"] = [sub_e for e in conditions for sub_e in [e] * (len(keys) * cluster_nb)]
             concat.index.names = ["Cluster"]
-            concat["Introns_nb"] = len(conditions) * [sub_i for i in keys for sub_i in [i] * cluster_nb]
+            concat = concat.reset_index()
+            concat = concat.sort_values(by=["Condition", "Introns_nb", "Cluster"])
+            # print(concat)
+            # concat["Introns_nb"] = len(conditions) * [sub_i for i in keys for sub_i in [i] * cluster_nb]
             # concat = concat[["Condition", "Introns_nb"] + list(range(0, 30))].reset_index()
             concat.to_excel(path)
 
@@ -336,18 +378,30 @@ class IntronStats:
         index_df = concat.groupby("Condition").apply(self.changing_index)
         index_df = index_df.apply(correct_clusters, axis=1)
 
+        # index_df = (
+        # pd.concat([index_df.reset_index()[["Condition", "Introns_nb"]], pd.DataFrame.from_records(index_df.reset_index()[0])], axis=1)
+        # .set_index(["Condition", "Introns_nb"])
+        # .T
+        # )
+        # index_df.index.name = "level_1"
+        # index_df = index_df.T
+        # print(index_df)
+
         return concat, index_df
 
     def concat_stats(self, l_fold_df, conditions, path, keys, cluster_nb):
         if os.path.isfile(path) is False:
             concat = pd.concat(l_fold_df)
-            concat["Condition"] = [sub_e for e in conditions for sub_e in [e] * (len(keys) * cluster_nb)]
+            # print(concat)
+            # concat["Condition"] = [sub_e for e in conditions for sub_e in [e] * (len(keys) * cluster_nb)]
             concat.index.names = ["Cluster"]
-            concat["Introns_nb"] = len(conditions) * [sub_i for i in keys for sub_i in [i] * cluster_nb]
+            # concat["Introns_nb"] = len(conditions) * [sub_i for i in keys for sub_i in [i] * cluster_nb]
             concat = concat.reset_index()
             # concat = concat[["Cluster", "Fold", "Condition", "Introns_nb"]]
             concat["id"] = concat["Condition"].astype(str) + "-" + concat["Introns_nb"].astype(str) + "-" + concat["Cluster"].astype(str)
-
+            concat = concat.sort_values(by=["Condition", "Introns_nb", "Cluster"])
+            # print(concat)
+            # exit()
         else:
             pass
         return concat
@@ -384,19 +438,28 @@ class IntronStats:
         # pd.options.display.max_rows = 120
         # print(fillna)
         # exit()
-        data_profiles = fillna.groupby(["Condition", "cluster_new"]).mean().drop(["Cluster", "Introns_nb"], axis=1)
-        data_profiles = 100 * data_profiles
+        # data_profiles = fillna.groupby(["Condition", "cluster_new"]).mean().drop(["Cluster", "Introns_nb"], axis=1)
+        data_profiles = fillna.drop(["Cluster", "id"], axis=1)
+        data_profiles = data_profiles.melt(id_vars=["Condition", "Introns_nb", "cluster_new"], value_vars=list(range(0, k)))
+        data_profiles["value"] = 100 * data_profiles["value"]
+        data_profiles["variable"] = data_profiles["variable"] + 1
+
         return data_profiles
 
     def fold_reordered(self, map_d, concat, keys, cluster_nb):
-        print(concat)
+        # print(concat)
         concat["cluster_new"] = concat["id"].map(map_d)
-        print(concat)
 
         def pivot(r):
             return r.pivot(columns=["cluster_new"], index="Introns_nb", values="Fold")
 
+        # ! WARNING
+        # concat = concat.dropna(subset=["cluster_new"])
+        # print(concat)
+
         data = concat.groupby("Condition").apply(pivot)
+        # print(data)
+
         data = data * 100
         return data
 
@@ -407,7 +470,7 @@ class IntronStats:
         return data
 
     @staticmethod
-    def heatmap(data_heatmap, data_barplot, data_profiles, path, keys, condition, filtering_used, up_lim=200, down_lim=0):
+    def heatmap(data_heatmap, data_barplot, data_profiles, concat_stats, path, keys, condition, filtering_used, up_lim=200, down_lim=0):
         # print(data_heatmap)
         # print(data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(100))
         # exit()
@@ -416,8 +479,8 @@ class IntronStats:
         modif_keys_intron_positions_columns = [e - keys[0] for e in keys[:10]]
         modif_keys_intron_positions_labels = [e - keys[0] + 1 for e in keys[:10]]
 
-        f = plt.figure(constrained_layout=True, figsize=(30, 15))
-        gs = f.add_gridspec(nrows=2, ncols=6, width_ratios=[2, 2, 2, 2, 1, 1], height_ratios=[10, 1])
+        f = plt.figure(constrained_layout=True, figsize=(30, 30))
+        gs = f.add_gridspec(nrows=3, ncols=6, width_ratios=[2, 2, 2, 2, 1, 1], height_ratios=[10, 4, 2])
         ax_heatmap = f.add_subplot(gs[0, :-2])
         ax_barplot1 = f.add_subplot(gs[0, -2])
         ax_barplot2 = f.add_subplot(gs[0, -1])
@@ -426,14 +489,49 @@ class IntronStats:
         ax_cluster2 = f.add_subplot(gs[1, 1])
         ax_cluster3 = f.add_subplot(gs[1, 2])
         ax_cluster4 = f.add_subplot(gs[1, 3])
+
+        ax_h_barplot = f.add_subplot(gs[2, :-2])
         # print(data_heatmap)
         # print(data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(100))
         # exit()
+
+        data_heatmap = (
+            data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(0).T.reset_index(drop=True).T
+        )
+        print(data_heatmap)
+        # exit()
+
+        stats_heatmap_false = (
+            concat_stats[["cluster_new", "False_raw", "Introns_nb"]]
+            .pivot(index=["Introns_nb"], columns=["cluster_new"], values=["False_raw"])
+            .rename({"False_raw": "Count"}, axis=1)
+            .T.reset_index(drop=True)
+            .T.fillna(0)
+            .astype(int)
+            .astype(str)
+        )
+
+        stats_heatmap_true = (
+            concat_stats[["cluster_new", "True_raw", "Introns_nb"]]
+            .pivot(index=["Introns_nb"], columns=["cluster_new"], values=["True_raw"])
+            .rename({"True_raw": "Count"}, axis=1)
+            .T.reset_index(drop=True)
+            .T.fillna(0)
+            .astype(int)
+            .astype(str)
+        )
+
+        data_heatmap_to_display = data_heatmap.round(0).applymap(lambda x: "+" + str(int(x)) if x > 0 else str(int(x)))
+        stats_heatmap = stats_heatmap_false + " / " + stats_heatmap_true + " / " + data_heatmap_to_display.astype(str) + "%"
+
         sns.heatmap(
-            data=data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(100),
-            center=100,
+            data=data_heatmap,
+            # center=int((up_lim - down_lim) / 2),
+            center=0,
             vmin=down_lim,
             vmax=up_lim,
+            annot=stats_heatmap.values.tolist(),
+            fmt="",
             cmap="coolwarm",
             linecolor="grey",
             lw=0.01,
@@ -462,6 +560,7 @@ class IntronStats:
         ax_barplot1.spines["right"].set_linewidth(0)
         ax_barplot1.spines["top"].set_linewidth(0)
         ax_barplot1.legend().remove()
+        ax_barplot1.grid(axis="x")
 
         sns.barplot(
             data=data_barplot.melt(id_vars=["Introns_nb"], value_vars=["True", "False"]),
@@ -476,38 +575,474 @@ class IntronStats:
         ax_barplot2.yaxis.set_ticks_position("none")
         ax_barplot2.spines["right"].set_linewidth(0)
         ax_barplot2.spines["top"].set_linewidth(0)
-        # ax_barplot2.legend().remove()
+        ax_barplot2.grid(axis="x")
 
-        ax_cluster1.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[0].values, color="red")
+        # ax_barplot2.legend().remove()
+        max_ylim = 55
+        # print(data_profiles.loc[data_profiles["cluster_new"] == 0]["value"].max())
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 0], x="variable", y="value", color="red", ax=ax_cluster1)
+        # ax_cluster1.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[0].values, color="red")
         ax_cluster1.set_xlabel("Intron ordinal position")
         ax_cluster1.set_xticks([i for i in range(1, 11)])
-        ax_cluster1.set_ylim(0, data_profiles[modif_keys_intron_positions_columns].max().max() + 5)
+        ax_cluster1.set_ylim(0, max_ylim)
         ax_cluster1.set_ylabel("Intron size\n(% gene body)")
+        ax_cluster1.grid(axis="y")
+
         # ax.yaxis.get_minor_ticks()
         # ax_cluster1.set_xticklabels([str(i) for i in range(1,11)])
 
-        ax_cluster2.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[1].values, color="red")
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 1], x="variable", y="value", color="red", ax=ax_cluster2)
+        # ax_cluster2.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[1].values, color="red")
         ax_cluster2.set_xlabel("Intron ordinal position")
         ax_cluster2.set_xticks([i for i in range(1, 11)])
-        ax_cluster2.set_ylim(0, data_profiles[modif_keys_intron_positions_columns].max().max() + 5)
-        ax_cluster2.set_yticks([])
+        ax_cluster2.set_ylim(0, max_ylim)
+        # ax_cluster2.set_yticks([])
+        ax_cluster2.grid(axis="y")
 
-        ax_cluster3.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[2].values, color="red")
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 2], x="variable", y="value", color="red", ax=ax_cluster3)
+        # ax_cluster3.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[2].values, color="red")
         ax_cluster3.set_xlabel("Intron ordinal position")
         ax_cluster3.set_xticks([i for i in range(1, 11)])
-        ax_cluster3.set_ylim(0, data_profiles[modif_keys_intron_positions_columns].max().max() + 5)
-        ax_cluster3.set_yticks([])
+        ax_cluster3.set_ylim(0, max_ylim)
+        # ax_cluster3.set_yticks([])
+        ax_cluster3.grid(axis="y")
 
-        ax_cluster4.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[3].values, color="red")
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 3], x="variable", y="value", color="red", ax=ax_cluster4)
+        # ax_cluster4.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[3].values, color="red")
         ax_cluster4.set_xlabel("Intron ordinal position")
         ax_cluster4.set_xticks([i for i in range(1, 11)])
-        ax_cluster4.set_ylim(0, data_profiles[modif_keys_intron_positions_columns].max().max() + 5)
-        ax_cluster4.set_yticks([])
+        ax_cluster4.set_ylim(0, max_ylim)
+        # ax_cluster4.set_yticks([])
+        ax_cluster4.grid(axis="y")
+
+        barplot_h_data = (
+            concat_stats[["cluster_new", "False_raw", "True_raw"]]
+            .groupby("cluster_new")
+            .sum()
+            .reset_index()
+            .rename({"False_raw": "False", "True_raw": "True"}, axis=1)
+            .melt(id_vars="cluster_new", value_vars=["True", "False"])
+        )
+
+        sns.barplot(data=barplot_h_data, x="cluster_new", y="value", hue="variable", ax=ax_h_barplot)
+
+        f.savefig(path)
+        # exit()
+
+    @staticmethod
+    def heatmap_two(data_heatmap, data_barplot, data_profiles, concat_stats, path, keys, condition, filtering_used, up_lim=200, down_lim=0):
+        # print(data_heatmap)
+        # print(data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(100))
+        # exit()
+        # print(data_barplot)
+        # print(data_profiles)
+        modif_keys_intron_positions_columns = [e - keys[0] for e in keys[:10]]
+        modif_keys_intron_positions_labels = [e - keys[0] + 1 for e in keys[:10]]
+
+        f = plt.figure(constrained_layout=True, figsize=(30, 30))
+        gs = f.add_gridspec(nrows=3, ncols=4, width_ratios=[2, 2, 1, 1], height_ratios=[10, 4, 2])
+        ax_heatmap = f.add_subplot(gs[0, :-2])
+        ax_barplot1 = f.add_subplot(gs[0, -2])
+        ax_barplot2 = f.add_subplot(gs[0, -1])
+
+        ax_cluster1 = f.add_subplot(gs[1, 0])
+        ax_cluster2 = f.add_subplot(gs[1, 1])
+        # ax_cluster3 = f.add_subplot(gs[1, 2])
+        # ax_cluster4 = f.add_subplot(gs[1, 3])
+
+        ax_h_barplot = f.add_subplot(gs[2, :-2])
+        # print(data_heatmap)
+        # print(data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(100))
+        # exit()
+
+        # data_heatmap = (
+        # data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(0).T.reset_index(drop=True).T
+        # )
+
+        concat_stats = concat_stats.rename({"cluster_lite": "cluster_new", "Introns_nb_bins": "Introns_nb"}, axis=1)
+        print(concat_stats)
+        # data_heatmap = concat_stats.pivot(index="Introns_nb", columns="cluster_new", values="Fold")
+        data_heatmap = data_heatmap
+
+        stats_heatmap_false = (
+            concat_stats[["cluster_new", "False_raw", "Introns_nb"]]
+            .pivot(index=["Introns_nb"], columns=["cluster_new"], values=["False_raw"])
+            .rename({"False_raw": "Count"}, axis=1)
+            .T.reset_index(drop=True)
+            .T.fillna(0)
+            .astype(int)
+            .astype(str)
+        )
+
+        stats_heatmap_true = (
+            concat_stats[["cluster_new", "True_raw", "Introns_nb"]]
+            .pivot(index=["Introns_nb"], columns=["cluster_new"], values=["True_raw"])
+            .rename({"True_raw": "Count"}, axis=1)
+            .T.reset_index(drop=True)
+            .T.fillna(0)
+            .astype(int)
+            .astype(str)
+        )
+
+        data_heatmap_to_display = data_heatmap.round(0).applymap(lambda x: "+" + str(int(x)) if x > 0 else str(int(x)))
+        stats_heatmap = stats_heatmap_false + " / " + stats_heatmap_true + " / " + data_heatmap_to_display.astype(str) + "%"
+        print(stats_heatmap)
+
+        sns.heatmap(
+            data=data_heatmap,
+            # center=int((up_lim - down_lim) / 2),
+            center=0,
+            vmin=down_lim,
+            vmax=up_lim,
+            annot=stats_heatmap.values.tolist(),
+            fmt="",
+            cmap="coolwarm",
+            linecolor="grey",
+            lw=0.01,
+            ax=ax_heatmap,
+            cbar_kws={"shrink": 0.4, "use_gridspec": False, "location": "left", "label": "% enrichment"},
+        )
+        ax_heatmap.set_xticklabels(["Cluster {}".format(i) for i in range(0, 4)])
+        ax_heatmap.set_ylabel("Gene introns nb")
+        ax_heatmap.set_title(
+            "{} VS {} enrichment by cluster and by group for condition : {} | Filtering : {}".format(
+                "True", "False", condition, filtering_used
+            )
+        )
+
+        sns.barplot(
+            data=data_barplot.melt(id_vars=["Introns_nb"], value_vars=["True_raw", "False_raw"]),
+            y="Introns_nb",
+            x="value",
+            hue="variable",
+            ax=ax_barplot1,
+        )
+        ax_barplot1.set_yticklabels([])
+        ax_barplot1.set_ylabel("")
+        ax_barplot1.set_xlabel("Genes count")
+        ax_barplot1.yaxis.set_ticks_position("none")
+        ax_barplot1.spines["right"].set_linewidth(0)
+        ax_barplot1.spines["top"].set_linewidth(0)
+        ax_barplot1.legend().remove()
+        ax_barplot1.grid(axis="x")
+
+        sns.barplot(
+            data=data_barplot.melt(id_vars=["Introns_nb"], value_vars=["True", "False"]),
+            y="Introns_nb",
+            x="value",
+            hue="variable",
+            ax=ax_barplot2,
+        )
+        ax_barplot2.set_yticklabels([])
+        ax_barplot2.set_ylabel("")
+        ax_barplot2.set_xlabel("% compare\nto all genes")
+        ax_barplot2.yaxis.set_ticks_position("none")
+        ax_barplot2.spines["right"].set_linewidth(0)
+        ax_barplot2.spines["top"].set_linewidth(0)
+        ax_barplot2.grid(axis="x")
+        # ax_barplot2.legend().remove()
+
+        print(data_profiles)
+
+        max_ylim = 55
+        # print(data_profiles.loc[data_profiles["cluster_new"] == 0]["value"].max())
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 0], x="variable", y="value", color="red", ax=ax_cluster1)
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 1], x="variable", y="value", color="green", ax=ax_cluster1)
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 2], x="variable", y="value", color="blue", ax=ax_cluster1)
+
+        # ax_cluster1.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[0].values, color="red")
+        ax_cluster1.set_xlabel("Intron ordinal position")
+        ax_cluster1.set_xticks([i for i in range(1, 11)])
+        ax_cluster1.set_ylim(0, max_ylim)
+        ax_cluster1.set_ylabel("Intron size\n(% gene body)")
+        ax_cluster1.grid(axis="y")
+        # ax.yaxis.get_minor_ticks()
+        # ax_cluster1.set_xticklabels([str(i) for i in range(1,11)])
+
+        # ax_cluster2.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[1].values, color="red")
+        # ax_cluster2.set_xlabel("Intron ordinal position")
+        # ax_cluster2.set_xticks([i for i in range(1, 11)])
+        # ax_cluster2.set_ylim(0, max_ylim)
+        # ax_cluster2.set_yticks([])
+
+        # ax_cluster3.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[2].values, color="red")
+        # ax_cluster3.set_xlabel("Intron ordinal position")
+        # ax_cluster3.set_xticks([i for i in range(1, 11)])
+        # ax_cluster3.set_ylim(0, max_ylim)
+        # ax_cluster3.set_yticks([])
+
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 3], x="variable", y="value", color="black", ax=ax_cluster2)
+        # ax_cluster4.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[3].values, color="red")
+        ax_cluster2.set_xlabel("Intron ordinal position")
+        ax_cluster2.set_xticks([i for i in range(1, 11)])
+        ax_cluster2.set_ylim(0, max_ylim)
+        ax_cluster2.set_ylabel("")
+        ax_cluster2.grid(axis="y")
+        # ax_cluster2.set_yticks([])
+
+        barplot_h_data = (
+            concat_stats[["cluster_new", "False_raw", "True_raw"]]
+            .groupby("cluster_new")
+            .sum()
+            .reset_index()
+            .rename({"False_raw": "False", "True_raw": "True"}, axis=1)
+            .melt(id_vars="cluster_new", value_vars=["True", "False"])
+        )
+
+        sns.barplot(data=barplot_h_data, x="cluster_new", y="value", hue="variable", ax=ax_h_barplot)
+
+        f.savefig(path)
+        # exit()
+
+    @staticmethod
+    def heatmap_three(
+        data_heatmap, data_barplot, data_profiles, concat_stats, path, keys, condition, filtering_used, up_lim=200, down_lim=0
+    ):
+        # print(data_heatmap)
+        # print(data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(100))
+        # exit()
+        # print(data_barplot)
+        # print(data_profiles)
+
+        color_miso = "#C43032"
+        color_siso = "#7B9FF9"
+        palette = [color_miso, color_siso]
+
+        modif_keys_intron_positions_columns = [e - keys[0] for e in keys[:10]]
+        modif_keys_intron_positions_labels = [e - keys[0] + 1 for e in keys[:10]]
+
+        f = plt.figure(constrained_layout=True, figsize=(40, 30))
+        # f = plt.figure(constrained_layout=True, figsize=(40, 40))
+        gs = f.add_gridspec(nrows=4, ncols=6, width_ratios=[1, 1, 1, 1, 0.5, 0.5], height_ratios=[5, 3, 1.5, 1.5])
+        gs.update(hspace=0.05)
+
+        ax_heatmap = f.add_subplot(gs[0, :-2])
+        ax_barplot1 = f.add_subplot(gs[0, -2])
+        ax_barplot2 = f.add_subplot(gs[0, -1])
+
+        ax_cluster1 = f.add_subplot(gs[1, 0])
+        ax_cluster2 = f.add_subplot(gs[1, 1])
+        ax_cluster3 = f.add_subplot(gs[1, 2])
+        ax_cluster4 = f.add_subplot(gs[1, 3])
+        ax_legend = f.add_subplot(gs[1, 4])
+
+        ax_h_barplot1 = f.add_subplot(gs[2, :-2])
+        ax_h_barplot2 = f.add_subplot(gs[3, :-2])
+        # print(data_heatmap)
+        # print(data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(100))
+        # exit()
+
+        # data_heatmap = (
+        # data_heatmap.reset_index(drop=True).drop(["Condition"], axis=1).set_index(["Introns_nb"]).fillna(0).T.reset_index(drop=True).T
+        # )
+
+        concat_stats = concat_stats.rename({"cluster_lite": "cluster_new", "Introns_nb_bins": "Introns_nb"}, axis=1)
+        print(concat_stats)
+        # data_heatmap = concat_stats.pivot(index="Introns_nb", columns="cluster_new", values="Fold")
+        data_heatmap = data_heatmap
+
+        stats_heatmap_false = (
+            concat_stats[["cluster_new", "False_raw", "Introns_nb"]]
+            .pivot(index=["Introns_nb"], columns=["cluster_new"], values=["False_raw"])
+            .rename({"False_raw": "Count"}, axis=1)
+            .T.reset_index(drop=True)
+            .T.fillna(0)
+            .astype(int)
+            .astype(str)
+        )
+
+        stats_heatmap_true = (
+            concat_stats[["cluster_new", "True_raw", "Introns_nb"]]
+            .pivot(index=["Introns_nb"], columns=["cluster_new"], values=["True_raw"])
+            .rename({"True_raw": "Count"}, axis=1)
+            .T.reset_index(drop=True)
+            .T.fillna(0)
+            .astype(int)
+            .astype(str)
+        )
+
+        data_heatmap_to_display = data_heatmap.round(0).applymap(lambda x: "+" + str(int(x)) if x > 0 else str(int(x)))
+        stats_heatmap = stats_heatmap_false + " / " + stats_heatmap_true + " / " + data_heatmap_to_display.astype(str) + "%"
+        print(stats_heatmap)
+        # stats_heatmap = data_heatmap_to_display.astype(str) + "%"
+        # print(stats_heatmap)
+
+        sns.heatmap(
+            data=data_heatmap,
+            # center=int((up_lim - down_lim) / 2),
+            center=0,
+            vmin=down_lim,
+            vmax=up_lim,
+            annot=stats_heatmap.values.tolist(),
+            fmt="",
+            cmap="coolwarm",
+            linecolor="grey",
+            lw=0.01,
+            ax=ax_heatmap,
+            cbar_kws={"shrink": 0.4, "use_gridspec": False, "location": "left", "label": "% enrichment"},
+        )
+        ax_heatmap.set_xticklabels(["Cluster {}".format(i) for i in range(1, 5)])
+        ax_heatmap.set_xlabel("")
+        ax_heatmap.set_ylabel("Gene introns nb")
+        ax_heatmap.set_title(
+            "{} VS {} enrichment by cluster and by group for condition : {} | Filtering : {}".format(
+                "True", "False", condition, filtering_used
+            )
+        )
+        print(data_barplot.melt(id_vars=["Introns_nb"], value_vars=["True_raw", "False_raw"]))
+        sns.barplot(
+            data=data_barplot.melt(id_vars=["Introns_nb"], value_vars=["True_raw", "False_raw"]),
+            y="Introns_nb",
+            x="value",
+            hue="variable",
+            ax=ax_barplot1,
+            palette=palette,
+        )
+        ax_barplot1.set_yticklabels([])
+        ax_barplot1.set_ylabel("")
+        ax_barplot1.set_xlabel("Genes count")
+        ax_barplot1.yaxis.set_ticks_position("none")
+        ax_barplot1.spines["right"].set_linewidth(0)
+        ax_barplot1.spines["top"].set_linewidth(0)
+        ax_barplot1.legend().remove()
+        ax_barplot1.grid(axis="x")
+        ax_barplot1.set_axisbelow(True)
+
+        print(data_barplot.melt(id_vars=["Introns_nb"], value_vars=["True", "False"]))
+        sns.barplot(
+            data=data_barplot.melt(id_vars=["Introns_nb"], value_vars=["True", "False"]),
+            y="Introns_nb",
+            x="value",
+            hue="variable",
+            ax=ax_barplot2,
+            palette=palette,
+        )
+        ax_barplot2.set_yticklabels([])
+        ax_barplot2.set_ylabel("")
+        ax_barplot2.set_xlabel("% compare\nto all genes")
+        ax_barplot2.yaxis.set_ticks_position("none")
+        ax_barplot2.spines["right"].set_linewidth(0)
+        ax_barplot2.spines["top"].set_linewidth(0)
+        ax_barplot2.grid(axis="x")
+        ax_barplot2.legend().remove()
+        ax_barplot2.set_axisbelow(True)
+
+        print(data_profiles)
+
+        max_ylim = 55
+        # max_ylim = data_profiles.loc[data_profiles["cluster_new"] == 0].value.max()
+        # print(data_profiles.loc[data_profiles["cluster_new"] == 0]["value"].max())
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 0], x="variable", y="value", color="red", ax=ax_cluster1)
+
+        # ax_cluster1.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[0].values, color="red")
+        ax_cluster1.set_xlabel("Intron ordinal position")
+        ax_cluster1.set_ylabel("")
+        ax_cluster1.set_xticks([i for i in range(1, 11)])
+        ax_cluster1.set_ylim(0, max_ylim)
+        ax_cluster1.set_ylabel("Intron size\n(% gene body)")
+        ax_cluster1.grid(axis="y")
+        # ax.yaxis.get_minor_ticks()
+        # ax_cluster1.set_xticklabels([str(i) for i in range(1,11)])
+
+        # ax_cluster2.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[1].values, color="red")
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 1], x="variable", y="value", color="green", ax=ax_cluster2)
+        ax_cluster2.set_xlabel("Intron ordinal position")
+        ax_cluster2.set_ylabel("")
+        ax_cluster2.set_xticks([i for i in range(1, 11)])
+        ax_cluster2.set_ylim(0, max_ylim)
+        # ax_cluster2.set_yticks([])
+        ax_cluster2.grid(axis="y")
+
+        # ax_cluster3.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[2].values, color="red")
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 2], x="variable", y="value", color="blue", ax=ax_cluster3)
+        ax_cluster3.set_xlabel("Intron ordinal position")
+        ax_cluster3.set_ylabel("")
+        ax_cluster3.set_xticks([i for i in range(1, 11)])
+        ax_cluster3.set_ylim(0, max_ylim)
+        # ax_cluster3.set_yticks([])
+        ax_cluster3.grid(axis="y")
+
+        sns.lineplot(data=data_profiles.loc[data_profiles["cluster_new"] == 3], x="variable", y="value", color="black", ax=ax_cluster4)
+        # ax_cluster4.plot(modif_keys_intron_positions_labels, data_profiles[modif_keys_intron_positions_columns].loc[3].values, color="red")
+        ax_cluster4.set_xlabel("Intron ordinal position")
+        ax_cluster4.set_ylabel("")
+        ax_cluster4.set_xticks([i for i in range(1, 11)])
+        ax_cluster4.set_ylim(0, max_ylim)
+        ax_cluster4.set_ylabel("")
+        ax_cluster4.grid(axis="y")
+        # ax_cluster2.set_yticks([])
+
+        import matplotlib.patches as mpatches
+
+        miso_patch = mpatches.Patch(color=color_miso, label="Multi-isoforms")
+        siso_patch = mpatches.Patch(color=color_siso, label="Single-isoform")
+        ax_legend.spines["top"].set_linewidth(0)
+        ax_legend.spines["bottom"].set_linewidth(0)
+        ax_legend.spines["right"].set_linewidth(0)
+        ax_legend.spines["left"].set_linewidth(0)
+        ax_legend.yaxis.set_ticks_position("none")
+        ax_legend.xaxis.set_ticks_position("none")
+        ax_legend.legend(handles=[miso_patch, siso_patch], loc="upper center", fontsize="x-large")
+        ax_legend.set_yticklabels([])
+        ax_legend.set_xticklabels([])
+
+        barplot_h_data = (
+            concat_stats[["cluster_new", "False_raw", "True_raw"]]
+            .groupby("cluster_new")
+            .sum()
+            .reset_index()
+            .rename({"False_raw": "False", "True_raw": "True"}, axis=1)
+            .melt(id_vars="cluster_new", value_vars=["True", "False"])
+        )
+        print(barplot_h_data)
+
+        sns.barplot(data=barplot_h_data, x="cluster_new", y="value", hue="variable", ax=ax_h_barplot1, palette=palette)
+        ax_h_barplot1.grid(axis="y", zorder=0)
+        ax_h_barplot1.set_axisbelow(True)
+        ax_h_barplot1.legend().remove()
+        ax_h_barplot1.set_xticklabels(["Cluster {}".format(i) for i in range(1, 5)])
+        ax_h_barplot1.set_xlabel("")
+        ax_h_barplot1.set_ylabel("Genes count")
+        ax_h_barplot1.spines["right"].set_linewidth(0)
+        ax_h_barplot1.spines["top"].set_linewidth(0)
+
+        def barplot_h_fct(r):
+            r["ratio"] = 100 * (r["value"] / r["value"].sum())
+            return r
+
+        barplot_h_data_ratio = barplot_h_data.groupby("variable").apply(barplot_h_fct)
+        print(barplot_h_data_ratio)
+
+        sns.barplot(data=barplot_h_data_ratio, x="cluster_new", y="ratio", hue="variable", ax=ax_h_barplot2, palette=palette)
+        ax_h_barplot2.grid(axis="y", zorder=0)
+        ax_h_barplot2.set_axisbelow(True)
+        ax_h_barplot2.legend().remove()
+        ax_h_barplot2.set_xticklabels(["Cluster {}".format(i) for i in range(1, 5)])
+        ax_h_barplot2.set_xlabel("")
+        ax_h_barplot2.set_ylabel("% compare\nto all genes")
+        ax_h_barplot2.spines["right"].set_linewidth(0)
+        ax_h_barplot2.spines["top"].set_linewidth(0)
+
         f.savefig(path)
         # exit()
 
     def launch_heatmap(
-        self, data_heatmap, data_barplot, data_profiles, conditions, keys, sign, down_lim=[75, 50, 0], up_lim=[125, 200, 400]
+        self,
+        df_raw,
+        data_heatmap,
+        data_barplot,
+        data_profiles,
+        concat_stats,
+        conditions,
+        keys,
+        sign,
+        seed,
+        # down_lim=[-50, -100, -200, -500],
+        # down_lim=[-50],
+        down_lim=[-25],
+        # up_lim=[50, 100, 200, 500],
+        # up_lim=[50],
+        up_lim=[25],
     ):
         data_heatmap = data_heatmap.reset_index()
         data_barplot = data_barplot.reset_index()
@@ -517,19 +1052,127 @@ class IntronStats:
         # print(data_barplot)
         # print(data_profiles)
 
-        path = "/gstock/EXOTIC/data/CLUSTERING/{}/heatmap_test_{}_{}_{}_{}.png"
+        path = "/gstock/EXOTIC/data/CLUSTERING/{}/heatmap_test11_{}_{}_{}_{}_{}.png"
+
+        cluster_lite = {
+            0: 0,
+            1: 0,
+            2: 0,
+            3: 1,
+        }
 
         for up, down in zip(up_lim, down_lim):
             for condition in conditions:
+
+                def test_stats(r, stats_raw):
+                    # print(r)
+                    # print(r[["cluster_lite", "True_raw", "False_raw"]].T)
+                    l_or = list()
+                    l_pvalue = list()
+                    for cluster in r["cluster_lite"].unique().tolist():
+                        # print(cluster)
+                        true_condition = int(r.loc[r["cluster_lite"] == cluster]["True_raw"].values[0])
+                        false_condition = int(r.loc[r["cluster_lite"] == cluster]["False_raw"].values[0])
+                        true_not_condition = int(r.loc[r["cluster_lite"] != cluster]["True_raw"].sum())
+                        false_not_condition = int(r.loc[r["cluster_lite"] != cluster]["False_raw"].sum())
+                        # print([[true_condition, true_not_condition], [false_condition, false_not_condition]])
+                        odd_ratio, pvalue = fisher_exact([[true_condition, true_not_condition], [false_condition, false_not_condition]])
+                        l_or.append(odd_ratio)
+                        l_pvalue.append(pvalue)
+                        # print(odd_ratio, pvalue)
+
+                    r["OR"] = l_or
+                    r["p_value"] = l_pvalue
+                    r["Ratio"] = r["True_raw"] / r["False_raw"]
+                    r["Fold"] = 100 * ((r["Ratio"] / (r["True_raw"].sum() / r["False_raw"].sum())) - 1)
+
+                    r["True"] = 100 * (r["True_raw"] / stats_raw["True_raw"])
+                    r["False"] = 100 * (r["False_raw"] / stats_raw["False_raw"])
+                    return r
+
+                print(up, down, condition)
                 data_heatmap_condition = data_heatmap.loc[data_heatmap["Condition"] == condition].reset_index(drop=True)
                 data_barplot_condition = data_barplot.loc[data_barplot["Condition"] == condition].reset_index(drop=True)
                 data_profiles_condition = data_profiles.loc[data_profiles["Condition"] == condition].reset_index(drop=True)
+                data_heatmap_stats_condition = concat_stats.loc[concat_stats["Condition"] == condition].reset_index(drop=True)
+
+                # print(data_heatmap_condition)
+                # print(data_barplot_condition)
                 # print(data_profiles_condition)
-                self.heatmap(
+                # print(data_heatmap_stats_condition)
+                # print(df_raw[condition].value_counts().to_dict())
+
+                # data_heatmap_condition["cluster_lite"] = data_heatmap_condition["Cluster"].map(cluster_lite)
+                # data_barplot_condition["cluster_lite"] = data_barplot_condition["cluster_new"].map(cluster_lite)
+                # data_profiles_condition["cluster_lite"] = data_profiles_condition["cluster_new"].map(cluster_lite)
+                # data_heatmap_stats_condition["cluster_lite"] = data_heatmap_stats_condition["cluster_new"].map(cluster_lite)
+                # data_profiles_condition = data_profiles_condition.rename({"cluster_new": "cluster_lite"}, axis=1)
+                data_heatmap_stats_condition = data_heatmap_stats_condition.rename({"cluster_new": "cluster_lite"}, axis=1)
+
+                ####
+
+                data_heatmap_stats_condition = data_heatmap_stats_condition[
+                    ["Introns_nb", "cluster_lite", "False_raw", "True_raw"]
+                ].sort_values(by=["Introns_nb", "cluster_lite"])
+
+                bins = [2, 12, 21, 30]
+                # bins = [2, 10, 15, 22, 30]
+                # bins = [2, 16, 30]
+                labels = [" - ".join([str(int(e) + 1), str(int(bins[j + 1]))]) for j, e in enumerate(bins) if j < len(bins) - 1]
+                data_heatmap_stats_condition["Introns_nb_bins"] = pd.cut(
+                    data_heatmap_stats_condition["Introns_nb"],
+                    bins,
+                    labels=labels,
+                    include_lowest=False,
+                )
+
+                pd.options.display.max_rows = 200
+                # print(data_heatmap_stats_condition)
+                data_heatmap_stats_condition = data_heatmap_stats_condition.rename(
+                    {"Introns_nb_bins": "Introns_nb", "Introns_nb": "Introns_nb_raw"}, axis=1
+                )
+
+                data_heatmap_stats_condition = data_heatmap_stats_condition.groupby(["Introns_nb", "cluster_lite"]).sum().reset_index()
+                data_heatmap_stats_condition = data_heatmap_stats_condition.groupby("Introns_nb").apply(
+                    lambda r: test_stats(r, data_heatmap_stats_condition[["False_raw", "True_raw"]].sum().T.to_dict())
+                )
+
+                data_heatmap_condition = data_heatmap_stats_condition.pivot(index="Introns_nb", columns="cluster_lite", values="Fold")
+                data_heatmap_stats_condition["Fold"] = data_heatmap_stats_condition["Fold"].fillna(0)
+                data_barplot_condition = (
+                    data_heatmap_stats_condition[["Introns_nb", "True_raw", "False_raw", "True", "False"]]
+                    .groupby("Introns_nb")
+                    .sum()
+                    .reset_index()
+                )
+                data_barplot_condition["Introns_nb"] = data_barplot_condition["Introns_nb"].astype(str)
+                # print(data_heatmap_stats_condition)
+                # print(data_heatmap_condition)
+                # print(data_barplot_condition)
+
+                ####
+
+                # data_heatmap_stats_condition_gb_introns = data_heatmap_stats_condition.groupby(["Introns_nb"]).sum().reset_index()
+                # data_heatmap_stats_condition_gb_introns["cluster_lite"] = "Sum"
+                # print(data_heatmap_stats_condition_gb_cluster)
+                # print(data_heatmap_stats_condition_gb_introns)
+                # print(
+                #     pd.concat([data_heatmap_stats_condition_gb_cluster, data_heatmap_stats_condition_gb_introns], axis=0).sort_values(
+                #         by=["Introns_nb", "cluster_lite"]
+                #     )
+                # )
+                # print(data_heatmap_condition)
+                # print(data_barplot_condition)
+                # print(data_profiles_condition)
+                # print(data_heatmap_stats_condition)
+                # exit()
+                # print(data_profiles_condition)
+                self.heatmap_three(
                     data_heatmap_condition,
                     data_barplot_condition,
                     data_profiles_condition,
-                    path.format(self.convert_sign[sign], condition, self.convert_sign[sign], str(up), str(down)),
+                    data_heatmap_stats_condition,
+                    path.format(self.convert_sign[sign], condition, self.convert_sign[sign], str(up), str(down), str(seed)),
                     keys,
                     condition,
                     sign,

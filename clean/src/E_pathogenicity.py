@@ -10,7 +10,7 @@ import numpy as np
 import os
 import pandas as pd
 
-# import parmap
+import parmap
 import re
 import requests
 import subprocess
@@ -36,7 +36,8 @@ from utils.utils import load_config_file, mkdir, convert_bins_into_labels
 tqdm.pandas()
 
 ## YAML FILES CONFIG
-yaml = load_config_file(config_file="clean/src/config_clean_clean.yaml")
+# yaml = load_config_file(config_file="clean/src/config_clean_clean.yaml")
+yaml = load_config_file(config_file="/home/weber/PycharmProjects/gene_isoforms/src/config/config_files.yaml")
 
 ## JSON DICTS CONFIG
 dicts = json.load(open("clean/src/config/EXOTIC_config.json"))
@@ -44,47 +45,64 @@ dicts = json.load(open("clean/src/config/EXOTIC_config.json"))
 
 class Pathogenicity:
     def __init__(self):
-        self.turn_refseq_miso_exons_into_bed(
-            "/gstock/EXOTIC/data/GENOMICS/refseq_37_processed_cds_variable.parquet", "/gstock/EXOTIC/data/GENOMICS/refseq_complete.bed"
-        )
-
-        refseq = self.exon_bins(
-            yaml["1_GENOMICS"]["Final"]["refseq_cds_with_variable"], "/gstock/EXOTIC/data/GENOMICS/refeq_exons_bins.parquet"
-        )
-
-        # gnomad_complete = self.read_gnomad_ht_file(
-        #     "/gstock/EXOTIC/data/GENOMICS/refseq_complete.bed",
-        #     yaml["3_EXONS_PROPERTIES"]["External"]["gnomad_2_1_1"],
-        #     "/gstock/EXOTIC/data/VARIATIONS/gnomad_full_expressed_genes.tsv.gz",
+        # self.turn_refseq_miso_exons_into_bed(
+        #     "/gstock/EXOTIC/data/GENOMICS/refseq_37_processed_cds_variable.parquet", "/gstock/EXOTIC/data/GENOMICS/refseq_complete.bed"
         # )
-        # print(gnomad_complete)
 
-        # clinvar_omim = self.load_clinvar(clinvar_path=yaml["3_EXONS_PROPERTIES"]["Final"]["refseq_clinvar_hail_retrieved"])
-        clinvar_data = self.read_and_process_clinvar_vcf(
-            clinvar_vcf_path=yaml["3_EXONS_PROPERTIES"]["External"]["clinvar_latest"],
-            output_file=yaml["5_PATHOGENICITY"]["TMP"]["clinvar_full"],
-        )
-        print(clinvar_data)
+        # refseq = self.exon_bins(
+        #     yaml["1_GENOMICS"]["Final"]["refseq_cds_with_variable"], "/gstock/EXOTIC/data/GENOMICS/refeq_exons_bins.parquet"
+        # )
 
-        self.distribution_pathogenic_variations(yaml["1_GENOMICS"]["TMP"]["tmp_refseq_concat_exons_cds_filtered"], clinvar_data, refseq)
-        # self.distribution_benign_variations(yaml["1_GENOMICS"]["TMP"]["tmp_refseq_concat_exons_cds_filtered"], gnomad_complete)
+        # # gnomad_complete = self.read_gnomad_ht_file(
+        # #     "/gstock/EXOTIC/data/GENOMICS/refseq_complete.bed",
+        # #     yaml["3_EXONS_PROPERTIES"]["External"]["gnomad_2_1_1"],
+        # #     "/gstock/EXOTIC/data/VARIATIONS/gnomad_full_expressed_genes.tsv.gz",
+        # # )
+        # # print(gnomad_complete)
 
-        exit()
+        # # clinvar_omim = self.load_clinvar(clinvar_path=yaml["3_EXONS_PROPERTIES"]["Final"]["refseq_clinvar_hail_retrieved"])
+        # clinvar_data = self.read_and_process_clinvar_vcf(
+        #     clinvar_vcf_path=yaml["3_EXONS_PROPERTIES"]["External"]["clinvar_latest"],
+        #     output_file=yaml["5_PATHOGENICITY"]["TMP"]["clinvar_full"],
+        # )
+        # print(clinvar_data)
 
-        # * REFSEQ OMIM
-        refseq_omim = self.load_refseq_pc_genes(path=yaml["1_GENOMICS"]["TMP"]["tmp_refseq_pc_genes"])
+        # self.distribution_pathogenic_variations(yaml["1_GENOMICS"]["TMP"]["tmp_refseq_concat_exons_cds_filtered"], clinvar_data, refseq)
+        # # self.distribution_benign_variations(yaml["1_GENOMICS"]["TMP"]["tmp_refseq_concat_exons_cds_filtered"], gnomad_complete)
 
-        # * DEXT
-        dext_omim = self.load_dext(yaml["4_DEXT"]["Final"]["dext"], refseq_omim, yaml["5_PATHOGENICITY"]["TMP"]["dext_omim"])
+        # exit()
 
-        # * DL OMIM entries
-        # self.download_omim(dext_omim, output_dir=yaml["5_PATHOGENICITY"]["TMP"]["omim_api_dump_directory"])
+        # # * REFSEQ OMIM
+        # refseq_omim = self.load_refseq_pc_genes(path=yaml["1_GENOMICS"]["TMP"]["tmp_refseq_pc_genes"])
+
+        # # * DEXT
+        # dext_omim = self.load_dext(yaml["4_DEXT"]["Final"]["dext"], refseq_omim, yaml["5_PATHOGENICITY"]["TMP"]["dext_omim"])
+
+        # # * DL OMIM entries
+        # # self.download_omim(dext_omim, output_dir=yaml["5_PATHOGENICITY"]["TMP"]["omim_api_dump_directory"])
+        clinvar_lite = pd.read_parquet("/gstock/EXOTIC/data/VARIATIONS/clinvar_20210123_lite_table.parquet")
+        clinvar_path = clinvar_lite.loc[(clinvar_lite["Status"] == "Pathogenic") & (~clinvar_lite["CLNREVSTAT"].str.contains("onflicting"))]
+        clinvar_genes_path = clinvar_path.GENE.unique().tolist()
+
+        genes_path_processed = yaml["1_GENOMICS"]["Final"]["refseq_genes_processed_miso_siso"]
+        genes = pd.read_parquet(genes_path_processed)
+        genes.loc[genes["Gene"].isin(clinvar_genes_path), "D/H"] = "Disease"
+        genes.loc[~genes["Gene"].isin(clinvar_genes_path), "D/H"] = "Healthy"
+
+        genes = genes.loc[genes["D/H"] == "Disease"]
+
+        genes["OMIM"] = genes["Attributes"].apply(lambda r: [e for e in r.split(";") if "MIM" in e])
+        genes_omim = genes.loc[genes["OMIM"].str.len() > 0]
+        genes_omim["OMIM"] = genes_omim["OMIM"].apply(lambda r: [e for e in r[0].split(",") if "MIM:" in e])
+        genes_omim = genes_omim.loc[genes_omim["OMIM"].str.len() > 0]
+        genes_omim["OMIM"] = genes_omim["OMIM"].apply(lambda r: r[0].replace("MIM:", ""))
 
         # * BUILD OMIM DF
         omim = self.build_omim(
-            path=yaml["5_PATHOGENICITY"]["TMP"]["omim_df_bodyparts_phenotypes"],
-            omim=dext_omim,
+            path=yaml["3_DISEASES"]["TMP"]["omim_genes_pheno"],
+            omim=genes_omim,
         )
+        exit()
 
         # * MELT & PROCESSED OMIM
         omim, omim_matrix = self.processed_omim(omim)
@@ -591,7 +609,7 @@ class Pathogenicity:
                                 # pheno_already_download.append(int(phenotype_mim_number))
 
     @staticmethod
-    def build_omim_mp(gene, l):
+    def build_omim_mp(gene, l, i):
         output_dir = "/gstock/biolo_datasets/variation/benchmark/Databases/OMIM/JSON_API/"
 
         omim_global_dict = dicts["omim_global_dict"]
@@ -638,16 +656,19 @@ class Pathogenicity:
 
                                     l.append(new_dict)
         except FileNotFoundError:
-            print(gene)
+            # print(gene)
+            i += 1
 
     def build_omim(self, path, omim):
-        if os.path.isfile(path) is False:
+        if os.path.isfile(path) is True:
             genes = sorted(omim.OMIM.dropna().unique().tolist())
             # exit()
 
             m = multiprocessing.Manager()
             l = m.list()
-            parmap.starmap(self.build_omim_mp, list(zip(genes)), l, pm_pbar=True)
+            i = 0
+            parmap.starmap(self.build_omim_mp, list(zip(genes)), l, i, pm_pbar=True)
+            print(i)
             df = pd.DataFrame(list(l))
             df = df[
                 ["OMIM", "Pheno_OMIM", "Pheno_Name", "Pheno_prefered_title", "PMID"]
@@ -660,13 +681,14 @@ class Pathogenicity:
 
         else:
             df = pd.read_parquet(path)
-            # print(df)
-            # print(df.OMIM.nunique())
-            # print(omim)
-            # print(omim.OMIM.nunique())
-            # omim = omim[["Gene", "OMIM"]].drop_duplicates()
-            # print(omim.loc[~omim["OMIM"].isin(df.OMIM.unique().tolist())].dropna())
-            # exit()
+        print(df)
+        # print(df)
+        print(df.OMIM.nunique())
+        # print(omim)
+        # print(omim.OMIM.nunique())
+        # omim = omim[["Gene", "OMIM"]].drop_duplicates()
+        # print(omim.loc[~omim["OMIM"].isin(df.OMIM.unique().tolist())].dropna())
+        # exit()
 
         # print(df)
         return df
